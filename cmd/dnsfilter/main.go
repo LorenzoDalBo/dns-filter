@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"github.com/LorenzoDalBo/dns-filter/internal/cache"
 	dnsserver "github.com/LorenzoDalBo/dns-filter/internal/dns"
 	"github.com/LorenzoDalBo/dns-filter/internal/filter"
+	"github.com/LorenzoDalBo/dns-filter/internal/store"
 )
 
 func main() {
@@ -21,32 +23,57 @@ func main() {
 	}
 
 	dnsCache := cache.New(30*time.Second, 1*time.Hour)
-
-	// Load blacklist from file if it exists (RF04.4)
 	blacklist := filter.NewBlacklist()
 	whitelist := filter.NewBlacklist()
 
+	// Try loading from PostgreSQL first
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		dbURL = "postgres://dnsfilter:dnsfilter123@localhost:5432/dnsfilter?sslmode=disable"
+	}
+
+	ctx := context.Background()
+	db, err := store.New(ctx, dbURL)
+	if err != nil {
+		fmt.Printf("Aviso: PostgreSQL indisponível (%v) — usando arquivos locais\n", err)
+	} else {
+		defer db.Close()
+		fmt.Println("PostgreSQL: conectado")
+
+		blackDomains, whiteDomains, err := db.LoadActiveBlocklistEntries(ctx)
+		if err != nil {
+			fmt.Printf("Aviso: erro ao carregar listas do banco: %v\n", err)
+		} else {
+			for _, d := range blackDomains {
+				blacklist.Add(d)
+			}
+			for _, d := range whiteDomains {
+				whitelist.Add(d)
+			}
+			fmt.Printf("PostgreSQL: %d blacklist + %d whitelist domínios carregados\n",
+				len(blackDomains), len(whiteDomains))
+		}
+	}
+
+	// Fallback: also load from files if they exist (RF04.4)
 	if _, err := os.Stat("blocklist.txt"); err == nil {
 		count, err := blacklist.LoadFromFile("blocklist.txt")
 		if err != nil {
 			fmt.Printf("Aviso: erro ao carregar blocklist.txt: %v\n", err)
 		} else {
-			fmt.Printf("Blacklist: %d domínios carregados de blocklist.txt\n", count)
+			fmt.Printf("Arquivo: %d domínios carregados de blocklist.txt\n", count)
 		}
 	}
-
 	if _, err := os.Stat("allowlist.txt"); err == nil {
 		count, err := whitelist.LoadFromFile("allowlist.txt")
 		if err != nil {
 			fmt.Printf("Aviso: erro ao carregar allowlist.txt: %v\n", err)
 		} else {
-			fmt.Printf("Whitelist: %d domínios carregados de allowlist.txt\n", count)
+			fmt.Printf("Arquivo: %d domínios carregados de allowlist.txt\n", count)
 		}
 	}
 
 	engine := filter.NewEngine(blacklist, whitelist)
-
-	// IP returned for blocked domains (RF03.7)
 	blockIP := net.IPv4(0, 0, 0, 0)
 
 	resolver := dnsserver.NewResolver(upstreams)
@@ -68,7 +95,7 @@ func main() {
 
 	fmt.Println("Upstreams:", upstreams)
 	fmt.Println("Cache: TTL floor=30s, ceiling=1h")
-	fmt.Printf("Blacklist: %d domínios | Whitelist: %d domínios\n",
+	fmt.Printf("Blacklist total: %d domínios | Whitelist total: %d domínios\n",
 		blacklist.Size(), whitelist.Size())
 	fmt.Println("Pressione Ctrl+C para encerrar")
 
