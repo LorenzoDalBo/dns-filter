@@ -14,6 +14,7 @@ import (
 	dnsserver "github.com/LorenzoDalBo/dns-filter/internal/dns"
 	"github.com/LorenzoDalBo/dns-filter/internal/filter"
 	"github.com/LorenzoDalBo/dns-filter/internal/identity"
+	"github.com/LorenzoDalBo/dns-filter/internal/logging"
 	"github.com/LorenzoDalBo/dns-filter/internal/store"
 )
 
@@ -81,7 +82,16 @@ func main() {
 	identityResolver := identity.NewResolver(1)
 	identityResolver.StartSessionEvictor()
 
-	// Captive portal credentials (hardcoded for now, DB in future phase)
+	// Log Pipeline — async batch writer to TimescaleDB (RF07.2-RF07.4)
+	var logPipeline *logging.Pipeline
+	if db != nil {
+		logPipeline = logging.NewPipeline(db.Pool(), 100000)
+		logPipeline.Start()
+	} else {
+		fmt.Println("Log pipeline: desativado (sem PostgreSQL)")
+	}
+
+	// Captive portal credentials (hardcoded for now, DB in future)
 	creds := &captive.Credentials{
 		Users: map[string]captive.UserInfo{
 			"admin":     {Password: "admin123", UserID: 1, GroupID: 2},
@@ -98,10 +108,10 @@ func main() {
 	}()
 
 	blockIP := net.IPv4(0, 0, 0, 0)
-	portalIP := net.IPv4(127, 0, 0, 1) // redirect to localhost for dev
+	portalIP := net.IPv4(127, 0, 0, 1)
 
 	resolver := dnsserver.NewResolver(upstreams)
-	handler := dnsserver.NewHandler(resolver, dnsCache, filterEngine, identityResolver, blockIP, portalIP)
+	handler := dnsserver.NewHandler(resolver, dnsCache, filterEngine, identityResolver, logPipeline, blockIP, portalIP)
 	server := dnsserver.NewServer("127.0.0.1:5354", handler)
 
 	go func() {
@@ -114,6 +124,11 @@ func main() {
 		fmt.Printf("Cache stats: %d hits, %d misses, %d entries\n",
 			stats.Hits, stats.Misses, dnsCache.Size())
 		fmt.Printf("Sessions ativas: %d\n", identityResolver.SessionCount())
+
+		if logPipeline != nil {
+			fmt.Printf("Log pipeline: %d pendentes\n", logPipeline.Pending())
+			logPipeline.Stop()
+		}
 
 		portal.Shutdown()
 		server.Shutdown()
