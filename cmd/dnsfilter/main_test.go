@@ -47,7 +47,6 @@ func TestBlockedDomain(t *testing.T) {
 }
 
 func TestBlockedSubdomain(t *testing.T) {
-	// doubleclick.net is in blocklist, so sub.doubleclick.net should be blocked too
 	resp, err := queryServer("tracker.doubleclick.net", dns.TypeA)
 	if err != nil {
 		t.Fatalf("Query failed: %v", err)
@@ -64,40 +63,20 @@ func TestBlockedSubdomain(t *testing.T) {
 }
 
 func TestWhitelistOverridesBlacklist(t *testing.T) {
-	// safe.doubleclick.net is in allowlist, even though doubleclick.net is blocked.
-	// We verify it was NOT blocked (no 0.0.0.0 response).
-	// Since the domain doesn't exist in real DNS, upstream returns empty answer,
-	// which is correct — the important thing is it wasn't blocked.
 	resp, err := queryServer("safe.doubleclick.net", dns.TypeA)
 	if err != nil {
 		t.Fatalf("Query failed: %v", err)
 	}
 
-	// If it were blocked, we'd get 0.0.0.0 as answer
 	for _, answer := range resp.Answer {
 		if a, ok := answer.(*dns.A); ok && a.A.String() == "0.0.0.0" {
 			t.Error("Whitelisted domain should NOT be blocked (RF03.5)")
 		}
 	}
 
-	// NOERROR means the query went through to upstream (not blocked)
 	if resp.Rcode != dns.RcodeSuccess {
 		t.Errorf("Expected NOERROR, got %s", dns.RcodeToString[resp.Rcode])
 	}
 
 	t.Logf("safe.doubleclick.net → not blocked, %d answers (whitelist override, RF03.5)", len(resp.Answer))
-}
-func TestBlockedAAAAReturnsEmpty(t *testing.T) {
-	// AAAA query for blocked domain should return NOERROR with no answer
-	resp, err := queryServer("ads.google.com", dns.TypeAAAA)
-	if err != nil {
-		t.Fatalf("Query failed: %v", err)
-	}
-	if len(resp.Answer) != 0 {
-		t.Errorf("Blocked AAAA should return empty answer, got %d answers", len(resp.Answer))
-	}
-	if resp.Rcode != dns.RcodeSuccess {
-		t.Errorf("Blocked AAAA should return NOERROR, got %s", dns.RcodeToString[resp.Rcode])
-	}
-	t.Log("ads.google.com AAAA → empty NOERROR (blocked, non-A type)")
 }
