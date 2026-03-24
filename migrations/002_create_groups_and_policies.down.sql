@@ -1,0 +1,3 @@
+DROP TABLE IF EXISTS policies;
+DROP TABLE IF EXISTS categories;
+DROP TABLE IF EXISTS groups;
