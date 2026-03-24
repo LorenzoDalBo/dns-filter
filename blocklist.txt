@@ -1,0 +1,9 @@
+# Test blocklist for development
+# Hosts file format
+127.0.0.1 ads.google.com
+0.0.0.0 doubleclick.net
+0.0.0.0 tracking.example.com
+
+# Plain domain format
+ads.facebook.com
+malware.test.com
