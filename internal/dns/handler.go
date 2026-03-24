@@ -3,30 +3,34 @@ package dns
 import (
 	"fmt"
 	"net"
+	"time"
 
 	"github.com/LorenzoDalBo/dns-filter/internal/cache"
 	"github.com/LorenzoDalBo/dns-filter/internal/filter"
 	"github.com/LorenzoDalBo/dns-filter/internal/identity"
+	"github.com/LorenzoDalBo/dns-filter/internal/logging"
 	"github.com/miekg/dns"
 )
 
 // Handler orchestrates DNS query processing.
-// Pipeline: Identity → Policy Engine → Cache → Upstream
+// Pipeline: Identity → Policy Engine → Cache → Upstream → Log
 type Handler struct {
 	resolver *Resolver
 	cache    *cache.Cache
 	filter   *filter.Engine
 	identity *identity.Resolver
-	blockIP  net.IP // IP returned for blocked domains (RF03.7)
-	portalIP net.IP // IP returned to redirect to captive portal (RF06.2)
+	logger   *logging.Pipeline
+	blockIP  net.IP
+	portalIP net.IP
 }
 
-func NewHandler(resolver *Resolver, cache *cache.Cache, filter *filter.Engine, identityResolver *identity.Resolver, blockIP net.IP, portalIP net.IP) *Handler {
+func NewHandler(resolver *Resolver, cache *cache.Cache, filter *filter.Engine, identityResolver *identity.Resolver, logger *logging.Pipeline, blockIP net.IP, portalIP net.IP) *Handler {
 	return &Handler{
 		resolver: resolver,
 		cache:    cache,
 		filter:   filter,
 		identity: identityResolver,
+		logger:   logger,
 		blockIP:  blockIP,
 		portalIP: portalIP,
 	}
@@ -37,11 +41,12 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 		return
 	}
 
+	start := time.Now()
+
 	question := r.Question[0]
 	qName := question.Name
 	qType := question.Qtype
 
-	// Extract client IP
 	clientIP := extractIP(w.RemoteAddr())
 
 	fmt.Printf("Query: %s (tipo %s) de %s",
@@ -64,6 +69,7 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 	if id.AuthMode == identity.AuthCaptivePortal {
 		fmt.Printf(" [CAPTIVE REDIRECT]\n")
 		h.sendCaptiveResponse(w, r, qName, qType)
+		h.log(start, clientIP, id, qName, qType, logging.ActionBlocked, logging.BlockReasonPolicy, nil, "captive")
 		return
 	}
 
@@ -72,6 +78,7 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 	if result.Action == filter.ActionBlock {
 		fmt.Printf(" [BLOCKED: %s]\n", result.Reason)
 		h.sendBlockResponse(w, r, qName, qType)
+		h.log(start, clientIP, id, qName, qType, logging.ActionBlocked, logging.BlockReasonBlacklist, nil, "blocked")
 		return
 	}
 
@@ -82,6 +89,8 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 		if err := w.WriteMsg(cached); err != nil {
 			fmt.Printf("Erro ao enviar resposta do cache: %v\n", err)
 		}
+		responseIP := extractAnswerIP(cached)
+		h.log(start, clientIP, id, qName, qType, logging.ActionCached, logging.BlockReasonNone, responseIP, "cache")
 		return
 	}
 
@@ -105,6 +114,46 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 	if err := w.WriteMsg(resp); err != nil {
 		fmt.Printf("Erro ao enviar resposta: %v\n", err)
 	}
+
+	responseIP := extractAnswerIP(resp)
+	h.log(start, clientIP, id, qName, qType, logging.ActionAllowed, logging.BlockReasonNone, responseIP, "upstream")
+}
+
+// log sends a query event to the async pipeline (RF07.1, RF07.2).
+func (h *Handler) log(start time.Time, clientIP net.IP, id *identity.Identity, qName string, qType uint16, action logging.Action, reason logging.BlockReason, responseIP net.IP, upstream string) {
+	if h.logger == nil {
+		return
+	}
+
+	entry := logging.Entry{
+		QueriedAt:   start,
+		ClientIP:    clientIP,
+		GroupID:     id.GroupID,
+		Domain:      qName,
+		QueryType:   qType,
+		Action:      action,
+		BlockReason: reason,
+		ResponseIP:  responseIP,
+		ResponseMs:  float32(time.Since(start).Seconds() * 1000),
+		Upstream:    upstream,
+	}
+
+	if id.UserID != 0 {
+		uid := id.UserID
+		entry.UserID = &uid
+	}
+
+	h.logger.Send(entry)
+}
+
+// extractAnswerIP gets the first A record IP from a response.
+func extractAnswerIP(msg *dns.Msg) net.IP {
+	for _, rr := range msg.Answer {
+		if a, ok := rr.(*dns.A); ok {
+			return a.A
+		}
+	}
+	return nil
 }
 
 // sendBlockResponse returns 0.0.0.0 for blocked A queries.
@@ -142,7 +191,7 @@ func (h *Handler) sendCaptiveResponse(w dns.ResponseWriter, r *dns.Msg, qName st
 				Name:   qName,
 				Rrtype: dns.TypeA,
 				Class:  dns.ClassINET,
-				Ttl:    10, // short TTL so it refreshes after login
+				Ttl:    10,
 			},
 			A: h.portalIP,
 		})
