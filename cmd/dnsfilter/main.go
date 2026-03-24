@@ -10,8 +10,10 @@ import (
 	"time"
 
 	"github.com/LorenzoDalBo/dns-filter/internal/cache"
+	"github.com/LorenzoDalBo/dns-filter/internal/captive"
 	dnsserver "github.com/LorenzoDalBo/dns-filter/internal/dns"
 	"github.com/LorenzoDalBo/dns-filter/internal/filter"
+	"github.com/LorenzoDalBo/dns-filter/internal/identity"
 	"github.com/LorenzoDalBo/dns-filter/internal/store"
 )
 
@@ -26,7 +28,7 @@ func main() {
 	blacklist := filter.NewBlacklist()
 	whitelist := filter.NewBlacklist()
 
-	// Try loading from PostgreSQL first
+	// PostgreSQL connection
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
 		dbURL = "postgres://dnsfilter:dnsfilter123@localhost:5432/dnsfilter?sslmode=disable"
@@ -55,7 +57,7 @@ func main() {
 		}
 	}
 
-	// Fallback: also load from files if they exist (RF04.4)
+	// File fallback (RF04.4)
 	if _, err := os.Stat("blocklist.txt"); err == nil {
 		count, err := blacklist.LoadFromFile("blocklist.txt")
 		if err != nil {
@@ -73,11 +75,33 @@ func main() {
 		}
 	}
 
-	engine := filter.NewEngine(blacklist, whitelist)
+	filterEngine := filter.NewEngine(blacklist, whitelist)
+
+	// Identity Resolver with default group=1
+	identityResolver := identity.NewResolver(1)
+	identityResolver.StartSessionEvictor()
+
+	// Captive portal credentials (hardcoded for now, DB in future phase)
+	creds := &captive.Credentials{
+		Users: map[string]captive.UserInfo{
+			"admin":     {Password: "admin123", UserID: 1, GroupID: 2},
+			"visitante": {Password: "visit123", UserID: 2, GroupID: 4},
+		},
+	}
+
+	// Captive portal HTTP server (RF06.1)
+	portal := captive.NewServer(":8080", identityResolver, creds, 8*time.Hour)
+	go func() {
+		if err := portal.Start(); err != nil {
+			fmt.Printf("Captive portal erro: %v\n", err)
+		}
+	}()
+
 	blockIP := net.IPv4(0, 0, 0, 0)
+	portalIP := net.IPv4(127, 0, 0, 1) // redirect to localhost for dev
 
 	resolver := dnsserver.NewResolver(upstreams)
-	handler := dnsserver.NewHandler(resolver, dnsCache, engine, blockIP)
+	handler := dnsserver.NewHandler(resolver, dnsCache, filterEngine, identityResolver, blockIP, portalIP)
 	server := dnsserver.NewServer("127.0.0.1:5354", handler)
 
 	go func() {
@@ -89,14 +113,16 @@ func main() {
 		stats := dnsCache.GetStats()
 		fmt.Printf("Cache stats: %d hits, %d misses, %d entries\n",
 			stats.Hits, stats.Misses, dnsCache.Size())
+		fmt.Printf("Sessions ativas: %d\n", identityResolver.SessionCount())
 
+		portal.Shutdown()
 		server.Shutdown()
 	}()
 
 	fmt.Println("Upstreams:", upstreams)
 	fmt.Println("Cache: TTL floor=30s, ceiling=1h")
-	fmt.Printf("Blacklist total: %d domínios | Whitelist total: %d domínios\n",
-		blacklist.Size(), whitelist.Size())
+	fmt.Printf("Blacklist: %d | Whitelist: %d\n", blacklist.Size(), whitelist.Size())
+	fmt.Println("Captive Portal: http://localhost:8080")
 	fmt.Println("Pressione Ctrl+C para encerrar")
 
 	if err := server.Start(); err != nil {

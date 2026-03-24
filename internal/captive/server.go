@@ -1,0 +1,206 @@
+package captive
+
+import (
+	"context"
+	"fmt"
+	"net"
+	"net/http"
+	"time"
+
+	"github.com/LorenzoDalBo/dns-filter/internal/identity"
+)
+
+// Credentials validates username/password.
+// In the future this will check against PostgreSQL or AD/LDAP.
+type Credentials struct {
+	Users map[string]UserInfo // username → info
+}
+
+type UserInfo struct {
+	Password string
+	UserID   int
+	GroupID  int
+}
+
+// Server serves the captive portal login page on HTTP (RF06.1).
+type Server struct {
+	httpServer *http.Server
+	resolver   *identity.Resolver
+	creds      *Credentials
+	sessionTTL time.Duration
+}
+
+func NewServer(addr string, resolver *identity.Resolver, creds *Credentials, sessionTTL time.Duration) *Server {
+	s := &Server{
+		resolver:   resolver,
+		creds:      creds,
+		sessionTTL: sessionTTL,
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", s.handleLogin)
+	mux.HandleFunc("/auth", s.handleAuth)
+
+	s.httpServer = &http.Server{
+		Addr:    addr,
+		Handler: mux,
+	}
+
+	return s
+}
+
+// Start begins listening for HTTP connections.
+func (s *Server) Start() error {
+	fmt.Printf("Captive Portal rodando em %s\n", s.httpServer.Addr)
+	return s.httpServer.ListenAndServe()
+}
+
+// Shutdown gracefully stops the HTTP server.
+func (s *Server) Shutdown() {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	s.httpServer.Shutdown(ctx)
+}
+
+// handleLogin serves the login page (RF06.4).
+func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
+	errMsg := r.URL.Query().Get("error")
+	redirectURL := r.URL.Query().Get("redirect")
+
+	errorHTML := ""
+	if errMsg != "" {
+		errorHTML = fmt.Sprintf(`<div class="error">%s</div>`, errMsg)
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	fmt.Fprintf(w, `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DNS Filter — Login</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #f0f2f5;
+            display: flex; justify-content: center; align-items: center;
+            min-height: 100vh;
+        }
+        .card {
+            background: white; border-radius: 12px; padding: 40px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.1); width: 100%%;
+            max-width: 400px;
+        }
+        h1 { font-size: 24px; color: #1a1a2e; margin-bottom: 8px; }
+        p.sub { color: #666; margin-bottom: 24px; font-size: 14px; }
+        label { display: block; font-size: 14px; color: #333; margin-bottom: 4px; font-weight: 500; }
+        input[type=text], input[type=password] {
+            width: 100%%; padding: 10px 12px; border: 1px solid #ddd;
+            border-radius: 8px; font-size: 14px; margin-bottom: 16px;
+        }
+        input:focus { outline: none; border-color: #4a9eed; }
+        button {
+            width: 100%%; padding: 12px; background: #4a9eed; color: white;
+            border: none; border-radius: 8px; font-size: 16px; cursor: pointer;
+            font-weight: 500;
+        }
+        button:hover { background: #3a8edd; }
+        .error {
+            background: #fee; color: #c00; padding: 10px; border-radius: 8px;
+            margin-bottom: 16px; font-size: 14px; text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>Autenticação Necessária</h1>
+        <p class="sub">Faça login para acessar a internet.</p>
+        %s
+        <form method="POST" action="/auth">
+            <input type="hidden" name="redirect" value="%s">
+            <label>Usuário</label>
+            <input type="text" name="username" required autofocus>
+            <label>Senha</label>
+            <input type="password" name="password" required>
+            <button type="submit">Entrar</button>
+        </form>
+    </div>
+</body>
+</html>`, errorHTML, redirectURL)
+}
+
+// handleAuth processes the login form (RF06.3, RF06.5, RF06.6).
+func (s *Server) handleAuth(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+
+	username := r.FormValue("username")
+	password := r.FormValue("password")
+	redirectURL := r.FormValue("redirect")
+
+	// Validate credentials
+	user, ok := s.creds.Users[username]
+	if !ok || user.Password != password {
+		// RF06.5: clear error message for invalid credentials
+		fmt.Printf("Captive: login falhou para '%s' de %s\n", username, r.RemoteAddr)
+		http.Redirect(w, r, "/?error=Usuário ou senha inválidos&redirect="+redirectURL, http.StatusSeeOther)
+		return
+	}
+
+	// Extract client IP from request
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		http.Error(w, "Erro interno", http.StatusInternalServerError)
+		return
+	}
+	clientIP := net.ParseIP(host)
+
+	// Register session in Identity Resolver (RF06.3)
+	s.resolver.AddSession(&identity.Session{
+		ClientIP:  clientIP,
+		UserID:    user.UserID,
+		Username:  username,
+		GroupID:   user.GroupID,
+		ExpiresAt: time.Now().Add(s.sessionTTL),
+	})
+
+	fmt.Printf("Captive: login OK — user=%s, ip=%s, group=%d\n", username, host, user.GroupID)
+
+	// RF06.6: redirect to original URL if available
+	if redirectURL != "" {
+		http.Redirect(w, r, redirectURL, http.StatusSeeOther)
+		return
+	}
+
+	// Default: show success page
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	fmt.Fprint(w, `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Login realizado</title>
+    <style>
+        body {
+            font-family: -apple-system, sans-serif; background: #f0f2f5;
+            display: flex; justify-content: center; align-items: center;
+            min-height: 100vh;
+        }
+        .card {
+            background: white; border-radius: 12px; padding: 40px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.1); text-align: center;
+        }
+        h1 { color: #22c55e; margin-bottom: 8px; }
+        p { color: #666; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>Login realizado com sucesso!</h1>
+        <p>Você já pode navegar normalmente.</p>
+    </div>
+</body>
+</html>`)
+}
