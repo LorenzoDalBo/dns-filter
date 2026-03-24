@@ -32,3 +32,4 @@ node_modules/
 
 # Docker volumes
 pgdata/
+*.exe 
