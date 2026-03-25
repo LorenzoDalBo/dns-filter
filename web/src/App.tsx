@@ -3,6 +3,10 @@ import MainLayout from './layouts/MainLayout'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Logs from './pages/Logs'
+import Users from './pages/Users'
+import Groups from './pages/Groups'
+import Lists from './pages/Lists'
+import Ranges from './pages/Ranges'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const token = localStorage.getItem('token')
@@ -24,6 +28,10 @@ export default function App() {
         >
           <Route path="/" element={<Dashboard />} />
           <Route path="/logs" element={<Logs />} />
+          <Route path="/users" element={<Users />} />
+          <Route path="/groups" element={<Groups />} />
+          <Route path="/lists" element={<Lists />} />
+          <Route path="/ranges" element={<Ranges />} />
         </Route>
       </Routes>
     </BrowserRouter>
