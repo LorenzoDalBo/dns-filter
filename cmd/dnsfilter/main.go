@@ -89,6 +89,31 @@ func main() {
 	if db != nil {
 		logPipeline = logging.NewPipeline(db.Pool(), 100000)
 		logPipeline.Start()
+
+		// Log retention — drop chunks older than 120 days (RF07.5)
+		retention := logging.NewRetention(db.Pool(), 120*24*time.Hour)
+		retention.Start()
+
+		// LISTEN/NOTIFY — auto-reload config on DB changes (RF03.9, RNF04.3)
+		listener := store.NewListener(db.Pool(), "config_changed")
+		listener.Start(ctx, func(payload string) {
+			fmt.Printf("Config changed (%s), reloading...\n", payload)
+			blackDomains, whiteDomains, err := db.LoadActiveBlocklistEntries(ctx)
+			if err != nil {
+				fmt.Printf("Reload failed: %v\n", err)
+				return
+			}
+			blacklist.Clear()
+			whitelist.Clear()
+			for _, d := range blackDomains {
+				blacklist.Add(d)
+			}
+			for _, d := range whiteDomains {
+				whitelist.Add(d)
+			}
+			fmt.Printf("Reloaded: %d blacklist + %d whitelist\n",
+				len(blackDomains), len(whiteDomains))
+		})
 	} else {
 		fmt.Println("Log pipeline: desativado (sem PostgreSQL)")
 	}

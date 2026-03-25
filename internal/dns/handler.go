@@ -156,13 +156,15 @@ func extractAnswerIP(msg *dns.Msg) net.IP {
 	return nil
 }
 
-// sendBlockResponse returns 0.0.0.0 for blocked A queries.
+// sendBlockResponse returns 0.0.0.0 for blocked A queries
+// and :: for blocked AAAA queries.
 func (h *Handler) sendBlockResponse(w dns.ResponseWriter, r *dns.Msg, qName string, qType uint16) {
 	msg := new(dns.Msg)
 	msg.SetReply(r)
 	msg.Authoritative = true
 
-	if qType == dns.TypeA {
+	switch qType {
+	case dns.TypeA:
 		msg.Answer = append(msg.Answer, &dns.A{
 			Hdr: dns.RR_Header{
 				Name:   qName,
@@ -172,7 +174,18 @@ func (h *Handler) sendBlockResponse(w dns.ResponseWriter, r *dns.Msg, qName stri
 			},
 			A: h.blockIP,
 		})
+	case dns.TypeAAAA:
+		msg.Answer = append(msg.Answer, &dns.AAAA{
+			Hdr: dns.RR_Header{
+				Name:   qName,
+				Rrtype: dns.TypeAAAA,
+				Class:  dns.ClassINET,
+				Ttl:    60,
+			},
+			AAAA: net.IPv6zero,
+		})
 	}
+	// Other types: NOERROR with empty answer
 
 	if err := w.WriteMsg(msg); err != nil {
 		fmt.Printf("Erro ao enviar block response: %v\n", err)
@@ -185,7 +198,8 @@ func (h *Handler) sendCaptiveResponse(w dns.ResponseWriter, r *dns.Msg, qName st
 	msg.SetReply(r)
 	msg.Authoritative = true
 
-	if qType == dns.TypeA {
+	switch qType {
+	case dns.TypeA:
 		msg.Answer = append(msg.Answer, &dns.A{
 			Hdr: dns.RR_Header{
 				Name:   qName,
@@ -194,6 +208,16 @@ func (h *Handler) sendCaptiveResponse(w dns.ResponseWriter, r *dns.Msg, qName st
 				Ttl:    10,
 			},
 			A: h.portalIP,
+		})
+	case dns.TypeAAAA:
+		msg.Answer = append(msg.Answer, &dns.AAAA{
+			Hdr: dns.RR_Header{
+				Name:   qName,
+				Rrtype: dns.TypeAAAA,
+				Class:  dns.ClassINET,
+				Ttl:    10,
+			},
+			AAAA: net.IPv6zero,
 		})
 	}
 
