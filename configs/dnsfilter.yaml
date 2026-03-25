@@ -1,0 +1,42 @@
+# DNS Filter — Configuração
+# Parâmetros de inicialização. Configuração dinâmica (usuários, grupos,
+# políticas, listas) é gerenciada via banco de dados + API.
+
+dns:
+  # Endereço de escuta. Use 0.0.0.0:53 para produção.
+  # Para desenvolvimento, use 127.0.0.1:5354
+  listen: "0.0.0.0:53"
+  
+  # Upstream resolvers (consultados em ordem, com fallback)
+  upstreams:
+    - "8.8.8.8:53"
+    - "8.8.4.4:53"
+    - "1.1.1.1:53"
+  
+  # IP retornado para domínios bloqueados
+  block_ip: "0.0.0.0"
+  
+  # IP do servidor para redirect do captive portal
+  # Em produção: IP real do servidor na rede (ex: 192.168.1.1)
+  portal_ip: "0.0.0.0"
+
+cache:
+  ttl_floor_seconds: 30
+  ttl_ceiling_seconds: 3600
+
+api:
+  listen: ":8081"
+  # IMPORTANTE: troque em produção! Use pelo menos 32 caracteres aleatórios.
+  jwt_secret: "TROQUE-ESTE-SECRET-EM-PRODUCAO-32chars"
+
+captive:
+  listen: ":80"
+  session_ttl_hours: 8
+
+database:
+  url: "postgres://dnsfilter:dnsfilter123@localhost:5432/dnsfilter?sslmode=disable"
+  retention_days: 120
+  log_buffer_size: 100000
+
+log:
+  level: "info"

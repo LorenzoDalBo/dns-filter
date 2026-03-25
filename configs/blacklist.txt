@@ -1,0 +1,15 @@
+# DNS Filter — Test Blacklist
+# One domain per line. Subdomains are blocked automatically.
+
+# Ads and tracking
+ads.google.com
+doubleclick.net
+adservice.google.com
+pagead2.googlesyndication.com
+
+# Telemetry
+tracking.example.com
+telemetry.microsoft.com
+
+# Test domain
+blocked.test.com
