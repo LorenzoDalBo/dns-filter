@@ -129,6 +129,16 @@ func (r *Resolver) LoadRanges(ranges []IPRange) {
 	fmt.Printf("Identity: loaded %d IP ranges\n", len(ranges))
 }
 
+// AddRange appends a single IP range without replacing existing ones.
+// Used when creating a new range via API.
+func (r *Resolver) AddRange(ipRange IPRange) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.ranges = append(r.ranges, ipRange)
+	fmt.Printf("Identity: added range %s (group=%d, auth=%d), total=%d\n",
+		ipRange.Network.String(), ipRange.GroupID, ipRange.AuthMode, len(r.ranges))
+}
+
 // SessionCount returns number of active sessions.
 func (r *Resolver) SessionCount() int {
 	r.mu.RLock()

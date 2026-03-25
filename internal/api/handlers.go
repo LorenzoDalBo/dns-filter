@@ -415,8 +415,11 @@ func (h *Handlers) CreateRange(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Update in-memory identity resolver
-	h.identity.LoadRanges([]identity.IPRange{
-		{Network: cidrNet, GroupID: req.GroupID, AuthMode: identity.AuthMode(req.AuthMode)},
+	// Append to in-memory identity resolver (don't replace existing ranges)
+	h.identity.AddRange(identity.IPRange{
+		Network:  cidrNet,
+		GroupID:  req.GroupID,
+		AuthMode: identity.AuthMode(req.AuthMode),
 	})
 
 	w.WriteHeader(http.StatusCreated)
