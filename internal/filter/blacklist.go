@@ -38,6 +38,12 @@ func (b *Blacklist) Remove(domain string) {
 	b.mu.Unlock()
 }
 
+func (b *Blacklist) Clear() {
+	b.mu.Lock()
+	b.domains = make(map[string]bool)
+	b.mu.Unlock()
+}
+
 // Contains checks if a domain is blocked.
 // Also checks parent domains to support wildcard blocking (RF03.6):
 // if "example.com" is blocked, "ads.example.com" is also blocked.

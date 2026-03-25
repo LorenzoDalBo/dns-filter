@@ -361,6 +361,8 @@ func (h *Handlers) ReloadLists(w http.ResponseWriter, r *http.Request) {
 
 	// Swap — for now we update the existing lists
 	// In a future refactor, Engine could support atomic swap
+	h.black.Clear()
+	h.white.Clear()
 	for _, d := range blackDomains {
 		h.black.Add(d)
 	}
