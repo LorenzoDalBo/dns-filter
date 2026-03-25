@@ -89,6 +89,10 @@ func main() {
 	if db != nil {
 		logPipeline = logging.NewPipeline(db.Pool(), 100000)
 		logPipeline.Start()
+
+		// Log retention — drop chunks older than 120 days (RF07.5)
+		retention := logging.NewRetention(db.Pool(), 120*24*time.Hour)
+		retention.Start()
 	} else {
 		fmt.Println("Log pipeline: desativado (sem PostgreSQL)")
 	}
