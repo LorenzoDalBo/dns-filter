@@ -18,6 +18,7 @@ import (
 	dnsserver "github.com/LorenzoDalBo/dns-filter/internal/dns"
 	"github.com/LorenzoDalBo/dns-filter/internal/filter"
 	"github.com/LorenzoDalBo/dns-filter/internal/identity"
+	"github.com/LorenzoDalBo/dns-filter/internal/logger"
 	"github.com/LorenzoDalBo/dns-filter/internal/logging"
 	"github.com/LorenzoDalBo/dns-filter/internal/store"
 )
@@ -35,6 +36,7 @@ func main() {
 	}
 
 	// Validate JWT secret
+	logger.Init(cfg.Log.Level)
 	if cfg.API.JWTSecret == "" || cfg.API.JWTSecret == "TROQUE-ESTE-SECRET-EM-PRODUCAO-32chars" {
 		fmt.Println("AVISO: JWT secret não configurado! Troque em configs/dnsfilter.yaml ou defina JWT_SECRET")
 	}
