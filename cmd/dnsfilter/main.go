@@ -41,11 +41,23 @@ func main() {
 		fmt.Println("AVISO: JWT secret não configurado! Troque em configs/dnsfilter.yaml ou defina JWT_SECRET")
 	}
 
-	// Cache
+	// Cache L1 (in-memory)
 	dnsCache := cache.New(
 		time.Duration(cfg.Cache.TTLFloorSeconds)*time.Second,
 		time.Duration(cfg.Cache.TTLCeilingSeconds)*time.Second,
 	)
+
+	// Cache L2 (Redis) — optional (RNF02.2)
+	if cfg.Redis.Addr != "" {
+		l2 := cache.NewRedisCache(
+			cfg.Redis.Addr,
+			time.Duration(cfg.Cache.TTLFloorSeconds)*time.Second,
+			time.Duration(cfg.Cache.TTLCeilingSeconds)*time.Second,
+		)
+		if l2 != nil {
+			dnsCache.SetL2(l2)
+		}
+	}
 
 	// Filter
 	blacklist := filter.NewBlacklist()

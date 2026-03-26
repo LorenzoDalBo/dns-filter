@@ -15,6 +15,7 @@ type Config struct {
 	API     APIConfig     `yaml:"api"`
 	Captive CaptiveConfig `yaml:"captive"`
 	DB      DBConfig      `yaml:"database"`
+	Redis   RedisConfig   `yaml:"redis"`
 	Log     LogConfig     `yaml:"log"`
 }
 
@@ -46,6 +47,10 @@ type DBConfig struct {
 	URL           string `yaml:"url"`
 	RetentionDays int    `yaml:"retention_days"`
 	LogBufferSize int    `yaml:"log_buffer_size"`
+}
+
+type RedisConfig struct {
+	Addr string `yaml:"addr"`
 }
 
 type LogConfig struct {

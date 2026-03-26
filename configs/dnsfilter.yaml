@@ -41,5 +41,8 @@ database:
   retention_days: 120
   log_buffer_size: 100000
 
+redis:
+  addr: "localhost:6379"
+
 log:
   level: "info"
