@@ -132,10 +132,18 @@ func main() {
 	}
 
 	// Captive Portal (RF06.1)
-	creds := &captive.Credentials{
-		Users: map[string]captive.UserInfo{},
+	// Captive Portal (RF06.1)
+	var captiveAuth captive.Authenticator
+	if db != nil {
+		captiveAuth = captive.NewDBAuthenticator(db.Pool())
+		fmt.Println("Captive Portal: autenticação via banco de dados")
+	} else {
+		captiveAuth = &captive.StaticCredentials{
+			Users: map[string]captive.StaticUser{},
+		}
+		fmt.Println("Captive Portal: sem autenticação (banco indisponível)")
 	}
-	portal := captive.NewServer(cfg.Captive.Listen, identityResolver, creds,
+	portal := captive.NewServer(cfg.Captive.Listen, identityResolver, captiveAuth,
 		time.Duration(cfg.Captive.SessionTTL)*time.Hour)
 	go func() {
 		if err := portal.Start(); err != nil {

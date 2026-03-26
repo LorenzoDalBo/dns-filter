@@ -111,6 +111,10 @@ func (h *Handlers) AuthMiddleware(next http.Handler) http.Handler {
 		}
 
 		token, err := jwt.Parse(tokenStr, func(t *jwt.Token) (interface{}, error) {
+			// Validate signing method to prevent algorithm bypass attacks (V06)
+			if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
+			}
 			return h.jwtSecret, nil
 		})
 		if err != nil || !token.Valid {
