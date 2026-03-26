@@ -1,0 +1,1 @@
+UPDATE admin_users SET password = '$2a$10$placeholder' WHERE username = 'admin';

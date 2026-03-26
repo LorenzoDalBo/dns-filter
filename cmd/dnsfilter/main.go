@@ -51,6 +51,12 @@ func main() {
 
 	// PostgreSQL connection
 	ctx := context.Background()
+
+	// Auto-migrate database on startup (RNF07.4)
+	if err := store.AutoMigrate(cfg.DB.URL); err != nil {
+		fmt.Printf("Aviso: auto-migrate falhou: %v\n", err)
+	}
+
 	db, err := store.New(ctx, cfg.DB.URL)
 	if err != nil {
 		fmt.Printf("Aviso: PostgreSQL indisponível (%v) — usando arquivos locais\n", err)
