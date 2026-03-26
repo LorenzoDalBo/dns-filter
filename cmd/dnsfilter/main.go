@@ -135,6 +135,9 @@ func main() {
 			fmt.Printf("Reloaded: %d blacklist + %d whitelist\n",
 				len(blackDomains), len(whiteDomains))
 		})
+		// External list auto-updater (RF04.2, RF04.3)
+		updater := filter.NewUpdater(db.Pool(), 24*time.Hour)
+		updater.Start()
 	} else {
 		fmt.Println("Log pipeline: desativado (sem PostgreSQL)")
 	}
