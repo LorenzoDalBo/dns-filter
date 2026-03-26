@@ -28,6 +28,9 @@ api:
   listen: ":8081"
   # IMPORTANTE: troque em produção! Use pelo menos 32 caracteres aleatórios.
   jwt_secret: "TROQUE-ESTE-SECRET-EM-PRODUCAO-32chars"
+  # TLS (opcional): descomente para habilitar HTTPS
+  # tls_cert: "/etc/dnsfilter/cert.pem"
+  # tls_key: "/etc/dnsfilter/key.pem"
 
 captive:
   listen: ":80"

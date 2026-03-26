@@ -19,10 +19,10 @@ type Config struct {
 }
 
 type DNSConfig struct {
-	Listen   string   `yaml:"listen"`
+	Listen    string   `yaml:"listen"`
 	Upstreams []string `yaml:"upstreams"`
-	BlockIP  string   `yaml:"block_ip"`
-	PortalIP string   `yaml:"portal_ip"`
+	BlockIP   string   `yaml:"block_ip"`
+	PortalIP  string   `yaml:"portal_ip"`
 }
 
 type CacheConfig struct {
@@ -33,6 +33,8 @@ type CacheConfig struct {
 type APIConfig struct {
 	Listen    string `yaml:"listen"`
 	JWTSecret string `yaml:"jwt_secret"`
+	TLSCert   string `yaml:"tls_cert"`
+	TLSKey    string `yaml:"tls_key"`
 }
 
 type CaptiveConfig struct {
@@ -41,9 +43,9 @@ type CaptiveConfig struct {
 }
 
 type DBConfig struct {
-	URL            string `yaml:"url"`
-	RetentionDays  int    `yaml:"retention_days"`
-	LogBufferSize  int    `yaml:"log_buffer_size"`
+	URL           string `yaml:"url"`
+	RetentionDays int    `yaml:"retention_days"`
+	LogBufferSize int    `yaml:"log_buffer_size"`
 }
 
 type LogConfig struct {

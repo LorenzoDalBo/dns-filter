@@ -168,9 +168,16 @@ func main() {
 	apiServer := &http.Server{Addr: cfg.API.Listen, Handler: apiRouter}
 
 	go func() {
-		fmt.Printf("API REST + Dashboard rodando em %s\n", cfg.API.Listen)
-		if err := apiServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			fmt.Printf("API erro: %v\n", err)
+		if cfg.API.TLSCert != "" && cfg.API.TLSKey != "" {
+			fmt.Printf("API REST + Dashboard rodando em %s (HTTPS)\n", cfg.API.Listen)
+			if err := apiServer.ListenAndServeTLS(cfg.API.TLSCert, cfg.API.TLSKey); err != nil && err != http.ErrServerClosed {
+				fmt.Printf("API erro: %v\n", err)
+			}
+		} else {
+			fmt.Printf("API REST + Dashboard rodando em %s (HTTP)\n", cfg.API.Listen)
+			if err := apiServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				fmt.Printf("API erro: %v\n", err)
+			}
 		}
 	}()
 
