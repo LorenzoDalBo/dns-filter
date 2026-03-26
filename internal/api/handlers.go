@@ -72,11 +72,13 @@ func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Generate JWT (RF10.2)
+	// Generate JWT (RF10.2, RNF03.3)
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"user_id":  user.ID,
 		"username": user.Username,
 		"role":     user.Role,
-		"exp":      time.Now().Add(24 * time.Hour).Unix(),
+		"exp":      time.Now().Add(1 * time.Hour).Unix(),
+		"iat":      time.Now().Unix(),
 	})
 
 	tokenString, err := token.SignedString(h.jwtSecret)
@@ -148,6 +150,30 @@ func (h *Handlers) AdminOnly(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// --- Refresh Token ---
+
+func (h *Handlers) RefreshToken(w http.ResponseWriter, r *http.Request) {
+	// Get current user from context (already authenticated via middleware)
+	user := r.Context().Value(userContextKey).(*AuthUser)
+
+	// Generate new token with fresh expiration (RNF03.3)
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"user_id":  user.ID,
+		"username": user.Username,
+		"role":     user.Role,
+		"exp":      time.Now().Add(1 * time.Hour).Unix(),
+		"iat":      time.Now().Unix(),
+	})
+
+	tokenString, err := token.SignedString(h.jwtSecret)
+	if err != nil {
+		writeError(w, "Erro ao gerar token", http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, loginResponse{Token: tokenString})
 }
 
 // --- Health & Metrics ---

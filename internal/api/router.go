@@ -29,6 +29,8 @@ func NewRouter(h *Handlers) http.Handler {
 	r.Route("/api", func(r chi.Router) {
 		r.Use(apiLimiter.Middleware)
 		r.Use(h.AuthMiddleware)
+		// Refresh token (RNF03.3)
+		r.Post("/auth/refresh", h.RefreshToken)
 
 		// Metrics (RF10.6)
 		r.Get("/metrics", h.GetMetrics)
