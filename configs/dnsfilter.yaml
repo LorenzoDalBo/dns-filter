@@ -28,6 +28,9 @@ api:
   listen: ":8081"
   # IMPORTANTE: troque em produção! Use pelo menos 32 caracteres aleatórios.
   jwt_secret: "TROQUE-ESTE-SECRET-EM-PRODUCAO-32chars"
+  # TLS (opcional): descomente para habilitar HTTPS
+  # tls_cert: "/etc/dnsfilter/cert.pem"
+  # tls_key: "/etc/dnsfilter/key.pem"
 
 captive:
   listen: ":80"
@@ -37,6 +40,9 @@ database:
   url: "postgres://dnsfilter:dnsfilter123@localhost:5432/dnsfilter?sslmode=disable"
   retention_days: 120
   log_buffer_size: 100000
+
+redis:
+  addr: "localhost:6379"
 
 log:
   level: "info"

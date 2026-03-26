@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   postgres:
     image: timescale/timescaledb:latest-pg16
@@ -12,12 +10,30 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
 
   redis:
     image: redis:7-alpine
     container_name: dnsfilter-redis
     ports:
       - "6379:6379"
+    restart: unless-stopped
+
+  dnsfilter:
+    build: .
+    container_name: dnsfilter-app
+    depends_on:
+      - postgres
+      - redis
+    environment:
+      DATABASE_URL: "postgres://dnsfilter:dnsfilter123@postgres:5432/dnsfilter?sslmode=disable"
+      JWT_SECRET: "${JWT_SECRET:-troque-este-secret-em-producao-32chars}"
+    ports:
+      - "53:53/udp"
+      - "53:53/tcp"
+      - "80:80"
+      - "8081:8081"
+    restart: unless-stopped
 
 volumes:
   pgdata:

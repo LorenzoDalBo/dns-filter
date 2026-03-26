@@ -29,6 +29,8 @@ func NewRouter(h *Handlers) http.Handler {
 	r.Route("/api", func(r chi.Router) {
 		r.Use(apiLimiter.Middleware)
 		r.Use(h.AuthMiddleware)
+		// Refresh token (RNF03.3)
+		r.Post("/auth/refresh", h.RefreshToken)
 
 		// Metrics (RF10.6)
 		r.Get("/metrics", h.GetMetrics)
@@ -43,25 +45,36 @@ func NewRouter(h *Handlers) http.Handler {
 		r.Group(func(r chi.Router) {
 			r.Use(h.AdminOnly)
 
-			// Users CRUD (RF08.4)
+			// Users CRUD (RF08.4, RF10.1)
 			r.Get("/users", h.ListUsers)
 			r.Post("/users", h.CreateUser)
+			r.Put("/users/{id}", h.UpdateUser)
+			r.Delete("/users/{id}", h.DeleteUser)
 
-			// Groups CRUD (RF08.5)
+			// Groups CRUD (RF08.5, RF10.1)
 			r.Get("/groups", h.ListGroups)
 			r.Post("/groups", h.CreateGroup)
+			r.Put("/groups/{id}", h.UpdateGroup)
+			r.Delete("/groups/{id}", h.DeleteGroup)
 
-			// Blocklists CRUD (RF08.6)
+			// Blocklists CRUD (RF08.6, RF10.1)
 			r.Get("/lists", h.ListBlocklists)
 			r.Post("/lists", h.CreateBlocklist)
+			r.Put("/lists/{id}", h.UpdateBlocklist)
+			r.Delete("/lists/{id}", h.DeleteBlocklist)
 			r.Post("/lists/{id}/entries", h.AddEntries)
 			r.Post("/lists/reload", h.ReloadLists)
 
-			// IP Ranges CRUD (RF08.7)
+			// IP Ranges CRUD (RF08.7, RF10.1)
 			r.Get("/ranges", h.ListRanges)
 			r.Post("/ranges", h.CreateRange)
+			r.Put("/ranges/{id}", h.UpdateRange)
+			r.Delete("/ranges/{id}", h.DeleteRange)
 		})
 	})
+
+	// Serve React dashboard from embedded frontend (RNF07.1)
+	r.NotFound(FrontendHandler().ServeHTTP)
 
 	return r
 }

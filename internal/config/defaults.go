@@ -26,6 +26,9 @@ func Defaults() *Config {
 			RetentionDays: 120,
 			LogBufferSize: 100000,
 		},
+		Redis: RedisConfig{
+			Addr: "localhost:6379",
+		},
 		Log: LogConfig{
 			Level: "info",
 		},

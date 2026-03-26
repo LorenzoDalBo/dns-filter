@@ -72,11 +72,13 @@ func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Generate JWT (RF10.2)
+	// Generate JWT (RF10.2, RNF03.3)
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"user_id":  user.ID,
 		"username": user.Username,
 		"role":     user.Role,
-		"exp":      time.Now().Add(24 * time.Hour).Unix(),
+		"exp":      time.Now().Add(1 * time.Hour).Unix(),
+		"iat":      time.Now().Unix(),
 	})
 
 	tokenString, err := token.SignedString(h.jwtSecret)
@@ -148,6 +150,30 @@ func (h *Handlers) AdminOnly(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// --- Refresh Token ---
+
+func (h *Handlers) RefreshToken(w http.ResponseWriter, r *http.Request) {
+	// Get current user from context (already authenticated via middleware)
+	user := r.Context().Value(userContextKey).(*AuthUser)
+
+	// Generate new token with fresh expiration (RNF03.3)
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"user_id":  user.ID,
+		"username": user.Username,
+		"role":     user.Role,
+		"exp":      time.Now().Add(1 * time.Hour).Unix(),
+		"iat":      time.Now().Unix(),
+	})
+
+	tokenString, err := token.SignedString(h.jwtSecret)
+	if err != nil {
+		writeError(w, "Erro ao gerar token", http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, loginResponse{Token: tokenString})
 }
 
 // --- Health & Metrics ---
@@ -428,6 +454,169 @@ func (h *Handlers) CreateRange(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusCreated)
 	writeJSON(w, map[string]int{"id": id})
+}
+
+// --- Update/Delete Users ---
+
+type updateUserRequest struct {
+	Username string `json:"username"`
+	Role     int    `json:"role"`
+	Active   bool   `json:"active"`
+}
+
+func (h *Handlers) UpdateUser(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, "ID inválido", http.StatusBadRequest)
+		return
+	}
+
+	var req updateUserRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, "JSON inválido", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.store.UpdateAdminUser(r.Context(), id, req.Username, req.Role, req.Active); err != nil {
+		writeError(w, fmt.Sprintf("Erro: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, map[string]string{"status": "updated"})
+}
+
+func (h *Handlers) DeleteUser(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, "ID inválido", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.store.DeleteAdminUser(r.Context(), id); err != nil {
+		writeError(w, fmt.Sprintf("Erro: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, map[string]string{"status": "deleted"})
+}
+
+// --- Update/Delete Groups ---
+
+func (h *Handlers) UpdateGroup(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, "ID inválido", http.StatusBadRequest)
+		return
+	}
+
+	var req createGroupRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, "JSON inválido", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.store.UpdateGroup(r.Context(), id, req.Name, req.Description); err != nil {
+		writeError(w, fmt.Sprintf("Erro: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, map[string]string{"status": "updated"})
+}
+
+func (h *Handlers) DeleteGroup(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, "ID inválido", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.store.DeleteGroup(r.Context(), id); err != nil {
+		writeError(w, fmt.Sprintf("Erro: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, map[string]string{"status": "deleted"})
+}
+
+// --- Update/Delete Blocklists ---
+
+type updateBlocklistRequest struct {
+	Name   string `json:"name"`
+	Active bool   `json:"active"`
+}
+
+func (h *Handlers) UpdateBlocklist(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, "ID inválido", http.StatusBadRequest)
+		return
+	}
+
+	var req updateBlocklistRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, "JSON inválido", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.store.UpdateBlocklist(r.Context(), id, req.Name, req.Active); err != nil {
+		writeError(w, fmt.Sprintf("Erro: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, map[string]string{"status": "updated"})
+}
+
+func (h *Handlers) DeleteBlocklist(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, "ID inválido", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.store.DeleteBlocklist(r.Context(), id); err != nil {
+		writeError(w, fmt.Sprintf("Erro: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, map[string]string{"status": "deleted"})
+}
+
+// --- Update/Delete Ranges ---
+
+func (h *Handlers) UpdateRange(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, "ID inválido", http.StatusBadRequest)
+		return
+	}
+
+	var req createRangeRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, "JSON inválido", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.store.UpdateIPRange(r.Context(), id, req.CIDR, req.GroupID, req.AuthMode, req.Description); err != nil {
+		writeError(w, fmt.Sprintf("Erro: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, map[string]string{"status": "updated"})
+}
+
+func (h *Handlers) DeleteRange(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, "ID inválido", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.store.DeleteIPRange(r.Context(), id); err != nil {
+		writeError(w, fmt.Sprintf("Erro: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, map[string]string{"status": "deleted"})
 }
 
 // --- Helpers ---

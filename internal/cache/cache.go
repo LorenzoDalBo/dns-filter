@@ -27,10 +27,11 @@ type Stats struct {
 type Cache struct {
 	mu       sync.RWMutex
 	entries  map[string]*entry
-	ttlFloor time.Duration // minimum TTL applied to any entry (RF02.3)
-	ttlCeil  time.Duration // maximum TTL applied to any entry (RF02.3)
+	ttlFloor time.Duration
+	ttlCeil  time.Duration
 	hits     atomic.Uint64
 	misses   atomic.Uint64
+	l2       *RedisCache
 }
 
 func New(ttlFloor, ttlCeil time.Duration) *Cache {
@@ -47,6 +48,11 @@ func New(ttlFloor, ttlCeil time.Duration) *Cache {
 	return c
 }
 
+// SetL2 attaches a Redis L2 cache (RF02.2).
+func (c *Cache) SetL2(l2 *RedisCache) {
+	c.l2 = l2
+}
+
 // key builds the cache key from domain + query type.
 // Example: "google.com.|A"
 func key(name string, qtype uint16) string {
@@ -57,27 +63,35 @@ func key(name string, qtype uint16) string {
 func (c *Cache) Get(name string, qtype uint16) *dns.Msg {
 	k := key(name, qtype)
 
+	// L1 lookup
 	c.mu.RLock()
 	e, found := c.entries[k]
 	c.mu.RUnlock()
 
-	if !found || time.Now().After(e.expiresAt) {
-		c.misses.Add(1)
-		return nil
+	if found && time.Now().Before(e.expiresAt) {
+		c.hits.Add(1)
+		return e.msg.Copy()
 	}
 
-	c.hits.Add(1)
+	// L2 lookup (Redis)
+	if c.l2 != nil {
+		if msg := c.l2.Get(name, qtype); msg != nil {
+			// Promote to L1
+			c.Set(name, qtype, msg)
+			c.hits.Add(1)
+			return msg.Copy()
+		}
+	}
 
-	// Return a copy so callers don't mutate the cached message.
-	// dns.Msg.Copy() is provided by miekg/dns for exactly this purpose.
-	return e.msg.Copy()
+	c.misses.Add(1)
+	return nil
 }
 
 // Set stores a DNS response in the cache.
 // TTL is extracted from the response, clamped to [floor, ceiling].
 func (c *Cache) Set(name string, qtype uint16, msg *dns.Msg) {
 	if msg == nil || len(msg.Answer) == 0 {
-		return // don't cache empty responses
+		return
 	}
 
 	ttl := c.extractTTL(msg)
@@ -90,6 +104,11 @@ func (c *Cache) Set(name string, qtype uint16, msg *dns.Msg) {
 		expiresAt: time.Now().Add(ttl),
 	}
 	c.mu.Unlock()
+
+	// Write-through to L2 (Redis)
+	if c.l2 != nil {
+		c.l2.Set(name, qtype, msg, ttl)
+	}
 }
 
 // Invalidate removes a specific domain from cache (RF02.4).

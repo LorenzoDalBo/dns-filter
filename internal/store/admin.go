@@ -74,3 +74,26 @@ func (s *Store) ListAdminUsers(ctx context.Context) ([]AdminUser, error) {
 
 	return users, nil
 }
+
+// UpdateAdminUser updates username, role and active status.
+func (s *Store) UpdateAdminUser(ctx context.Context, id int, username string, role int, active bool) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE admin_users SET username = $1, role = $2, active = $3, updated_at = NOW()
+		WHERE id = $4
+	`, username, role, active, id)
+	if err != nil {
+		return fmt.Errorf("store: update user: %w", err)
+	}
+	return nil
+}
+
+// DeleteAdminUser deactivates a user (soft delete).
+func (s *Store) DeleteAdminUser(ctx context.Context, id int) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE admin_users SET active = false, updated_at = NOW() WHERE id = $1
+	`, id)
+	if err != nil {
+		return fmt.Errorf("store: delete user: %w", err)
+	}
+	return nil
+}

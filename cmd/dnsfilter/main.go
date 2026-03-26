@@ -18,6 +18,7 @@ import (
 	dnsserver "github.com/LorenzoDalBo/dns-filter/internal/dns"
 	"github.com/LorenzoDalBo/dns-filter/internal/filter"
 	"github.com/LorenzoDalBo/dns-filter/internal/identity"
+	"github.com/LorenzoDalBo/dns-filter/internal/logger"
 	"github.com/LorenzoDalBo/dns-filter/internal/logging"
 	"github.com/LorenzoDalBo/dns-filter/internal/store"
 )
@@ -35,15 +36,28 @@ func main() {
 	}
 
 	// Validate JWT secret
+	logger.Init(cfg.Log.Level)
 	if cfg.API.JWTSecret == "" || cfg.API.JWTSecret == "TROQUE-ESTE-SECRET-EM-PRODUCAO-32chars" {
 		fmt.Println("AVISO: JWT secret não configurado! Troque em configs/dnsfilter.yaml ou defina JWT_SECRET")
 	}
 
-	// Cache
+	// Cache L1 (in-memory)
 	dnsCache := cache.New(
 		time.Duration(cfg.Cache.TTLFloorSeconds)*time.Second,
 		time.Duration(cfg.Cache.TTLCeilingSeconds)*time.Second,
 	)
+
+	// Cache L2 (Redis) — optional (RNF02.2)
+	if cfg.Redis.Addr != "" {
+		l2 := cache.NewRedisCache(
+			cfg.Redis.Addr,
+			time.Duration(cfg.Cache.TTLFloorSeconds)*time.Second,
+			time.Duration(cfg.Cache.TTLCeilingSeconds)*time.Second,
+		)
+		if l2 != nil {
+			dnsCache.SetL2(l2)
+		}
+	}
 
 	// Filter
 	blacklist := filter.NewBlacklist()
@@ -51,6 +65,12 @@ func main() {
 
 	// PostgreSQL connection
 	ctx := context.Background()
+
+	// Auto-migrate database on startup (RNF07.4)
+	if err := store.AutoMigrate(cfg.DB.URL); err != nil {
+		fmt.Printf("Aviso: auto-migrate falhou: %v\n", err)
+	}
+
 	db, err := store.New(ctx, cfg.DB.URL)
 	if err != nil {
 		fmt.Printf("Aviso: PostgreSQL indisponível (%v) — usando arquivos locais\n", err)
@@ -127,6 +147,9 @@ func main() {
 			fmt.Printf("Reloaded: %d blacklist + %d whitelist\n",
 				len(blackDomains), len(whiteDomains))
 		})
+		// External list auto-updater (RF04.2, RF04.3)
+		updater := filter.NewUpdater(db.Pool(), 24*time.Hour)
+		updater.Start()
 	} else {
 		fmt.Println("Log pipeline: desativado (sem PostgreSQL)")
 	}
@@ -152,18 +175,23 @@ func main() {
 	}()
 
 	// REST API (RF10.1-RF10.6)
-	if db != nil {
-		apiHandlers := api.NewHandlers(db, dnsCache, filterEngine, identityResolver, logPipeline, blacklist, whitelist, cfg.API.JWTSecret)
-		apiRouter := api.NewRouter(apiHandlers)
-		apiServer := &http.Server{Addr: cfg.API.Listen, Handler: apiRouter}
+	apiHandlers := api.NewHandlers(db, dnsCache, filterEngine, identityResolver, logPipeline, blacklist, whitelist, cfg.API.JWTSecret)
+	apiRouter := api.NewRouter(apiHandlers)
+	apiServer := &http.Server{Addr: cfg.API.Listen, Handler: apiRouter}
 
-		go func() {
-			fmt.Printf("API REST rodando em %s\n", cfg.API.Listen)
+	go func() {
+		if cfg.API.TLSCert != "" && cfg.API.TLSKey != "" {
+			fmt.Printf("API REST + Dashboard rodando em %s (HTTPS)\n", cfg.API.Listen)
+			if err := apiServer.ListenAndServeTLS(cfg.API.TLSCert, cfg.API.TLSKey); err != nil && err != http.ErrServerClosed {
+				fmt.Printf("API erro: %v\n", err)
+			}
+		} else {
+			fmt.Printf("API REST + Dashboard rodando em %s (HTTP)\n", cfg.API.Listen)
 			if err := apiServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 				fmt.Printf("API erro: %v\n", err)
 			}
-		}()
-	}
+		}
+	}()
 
 	// DNS Server
 	blockIP := net.ParseIP(cfg.DNS.BlockIP)
