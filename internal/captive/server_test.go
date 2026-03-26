@@ -15,14 +15,14 @@ import (
 func setupTestServer() (*Server, *identity.Resolver) {
 	resolver := identity.NewResolver(1)
 
-	creds := &Credentials{
-		Users: map[string]UserInfo{
+	auth := &StaticCredentials{
+		Users: map[string]StaticUser{
 			"admin": {Password: "admin123", UserID: 1, GroupID: 2},
 			"guest": {Password: "guest123", UserID: 2, GroupID: 4},
 		},
 	}
 
-	server := NewServer(":0", resolver, creds, 8*time.Hour)
+	server := NewServer(":0", resolver, auth, 8*time.Hour)
 	return server, resolver
 }
 

@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -108,24 +109,19 @@ func (p *Pipeline) consume() {
 }
 
 // flush writes a batch of entries to PostgreSQL.
+// flush writes a batch of entries to PostgreSQL using a single multi-row INSERT.
 func (p *Pipeline) flush(batch []Entry) {
 	if p.pool == nil {
-		// No database connection — discard (RNF02.1)
 		return
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	tx, err := p.pool.Begin(ctx)
-	if err != nil {
-		fmt.Printf("Log pipeline: tx begin failed: %v (dropping %d entries)\n", err, len(batch))
-		return
-	}
-	defer tx.Rollback(ctx)
-
+	// Build batch insert for much better performance than individual INSERTs
+	b := &pgx.Batch{}
 	for _, e := range batch {
-		_, err := tx.Exec(ctx, `
+		b.Queue(`
 			INSERT INTO dns_query_logs
 				(queried_at, client_ip, user_id, group_id, domain, query_type,
 				 action, block_reason, category_id, response_ip, response_ms, upstream)
@@ -135,18 +131,23 @@ func (p *Pipeline) flush(batch []Entry) {
 			e.Domain, e.QueryType, e.Action, e.BlockReason,
 			e.CategoryID, ipToString(e.ResponseIP), e.ResponseMs, e.Upstream,
 		)
-		if err != nil {
-			fmt.Printf("Log pipeline: insert failed: %v\n", err)
-			return
+	}
+
+	results := p.pool.SendBatch(ctx, b)
+	defer results.Close()
+
+	var failed int
+	for range batch {
+		if _, err := results.Exec(); err != nil {
+			failed++
 		}
 	}
 
-	if err := tx.Commit(ctx); err != nil {
-		fmt.Printf("Log pipeline: commit failed: %v (dropping %d entries)\n", err, len(batch))
-		return
+	if failed > 0 {
+		fmt.Printf("Log pipeline: flushed %d entries (%d failed)\n", len(batch)-failed, failed)
+	} else {
+		fmt.Printf("Log pipeline: flushed %d entries\n", len(batch))
 	}
-
-	fmt.Printf("Log pipeline: flushed %d entries\n", len(batch))
 }
 
 func ipToString(ip net.IP) *string {

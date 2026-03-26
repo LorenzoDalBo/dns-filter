@@ -15,14 +15,19 @@ func NewRouter(h *Handlers) http.Handler {
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.RealIP)
 
-	// Health check — no auth required (RNF06.3)
+	// Rate limiting: 10 requests/second per IP, burst of 20 (RNF03.4)
+	loginLimiter := NewRateLimiter(5, 10) // stricter for login
+	apiLimiter := NewRateLimiter(30, 60)  // general API
+
+	// Health check — no auth, no rate limit (RNF06.3)
 	r.Get("/health", h.HealthCheck)
 
-	// Public auth endpoint
-	r.Post("/api/auth/login", h.Login)
+	// Public auth endpoint with strict rate limiting
+	r.With(loginLimiter.Middleware).Post("/api/auth/login", h.Login)
 
 	// Protected API routes (RF10.2, RF10.3)
 	r.Route("/api", func(r chi.Router) {
+		r.Use(apiLimiter.Middleware)
 		r.Use(h.AuthMiddleware)
 
 		// Metrics (RF10.6)

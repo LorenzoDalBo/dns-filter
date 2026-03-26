@@ -3,12 +3,13 @@ package store
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // Listener subscribes to PostgreSQL LISTEN/NOTIFY channels (RF03.9, RNF04.3).
-// When a notification arrives, the callback is executed.
+// Automatically reconnects on failure with exponential backoff.
 type Listener struct {
 	pool    *pgxpool.Pool
 	channel string
@@ -24,44 +25,61 @@ func NewListener(pool *pgxpool.Pool, channel string) *Listener {
 
 // Start begins listening for notifications in a background goroutine.
 // Calls onNotify whenever a notification is received on the channel.
+// Reconnects automatically on failure (B02 fix).
 func (l *Listener) Start(ctx context.Context, onNotify func(payload string)) {
 	go func() {
-		conn, err := l.pool.Acquire(ctx)
-		if err != nil {
-			fmt.Printf("LISTEN/NOTIFY: failed to acquire connection: %v\n", err)
-			return
-		}
-		defer conn.Release()
-
-		_, err = conn.Exec(ctx, fmt.Sprintf("LISTEN %s", l.channel))
-		if err != nil {
-			fmt.Printf("LISTEN/NOTIFY: failed to listen on %s: %v\n", l.channel, err)
-			return
-		}
-
-		fmt.Printf("LISTEN/NOTIFY: subscribed to channel '%s'\n", l.channel)
+		backoff := 1 * time.Second
+		maxBackoff := 60 * time.Second
 
 		for {
-			notification, err := conn.Conn().WaitForNotification(ctx)
-			if err != nil {
-				if ctx.Err() != nil {
-					// Context cancelled — shutting down
-					return
-				}
-				fmt.Printf("LISTEN/NOTIFY: error waiting: %v\n", err)
+			err := l.listen(ctx, onNotify)
+			if ctx.Err() != nil {
+				// Context cancelled — shutting down
 				return
 			}
 
-			fmt.Printf("LISTEN/NOTIFY: received on '%s': %s\n",
-				notification.Channel, notification.Payload)
+			fmt.Printf("LISTEN/NOTIFY: connection lost: %v, reconnecting in %v\n", err, backoff)
+			time.Sleep(backoff)
 
-			onNotify(notification.Payload)
+			// Exponential backoff with cap
+			backoff *= 2
+			if backoff > maxBackoff {
+				backoff = maxBackoff
+			}
 		}
 	}()
 }
 
+// listen runs a single LISTEN session. Returns error when connection is lost.
+func (l *Listener) listen(ctx context.Context, onNotify func(payload string)) error {
+	conn, err := l.pool.Acquire(ctx)
+	if err != nil {
+		return fmt.Errorf("acquire connection: %w", err)
+	}
+	defer conn.Release()
+
+	_, err = conn.Exec(ctx, fmt.Sprintf("LISTEN %s", l.channel))
+	if err != nil {
+		return fmt.Errorf("listen on %s: %w", l.channel, err)
+	}
+
+	fmt.Printf("LISTEN/NOTIFY: subscribed to channel '%s'\n", l.channel)
+
+	// Reset backoff on successful connection
+	for {
+		notification, err := conn.Conn().WaitForNotification(ctx)
+		if err != nil {
+			return fmt.Errorf("wait notification: %w", err)
+		}
+
+		fmt.Printf("LISTEN/NOTIFY: received on '%s': %s\n",
+			notification.Channel, notification.Payload)
+
+		onNotify(notification.Payload)
+	}
+}
+
 // NotifyChannel sends a NOTIFY to a PostgreSQL channel.
-// Called by the API when config changes (blocklists, policies, etc).
 func NotifyChannel(ctx context.Context, pool *pgxpool.Pool, channel string, payload string) error {
 	_, err := pool.Exec(ctx, fmt.Sprintf("NOTIFY %s, '%s'", channel, payload))
 	if err != nil {

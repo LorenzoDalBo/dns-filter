@@ -3,6 +3,7 @@ package captive
 import (
 	"context"
 	"fmt"
+	"html"
 	"net"
 	"net/http"
 	"time"
@@ -12,28 +13,48 @@ import (
 
 // Credentials validates username/password.
 // In the future this will check against PostgreSQL or AD/LDAP.
-type Credentials struct {
-	Users map[string]UserInfo // username → info
+// Authenticator validates captive portal credentials.
+// Supports both static map (for testing) and database (for production).
+type Authenticator interface {
+	Authenticate(username, password string) (*UserInfo, bool)
 }
 
 type UserInfo struct {
+	UserID  int
+	GroupID int
+}
+
+// StaticCredentials validates against an in-memory map (for testing).
+type StaticCredentials struct {
+	Users map[string]StaticUser
+}
+
+type StaticUser struct {
 	Password string
 	UserID   int
 	GroupID  int
+}
+
+func (s *StaticCredentials) Authenticate(username, password string) (*UserInfo, bool) {
+	user, ok := s.Users[username]
+	if !ok || user.Password != password {
+		return nil, false
+	}
+	return &UserInfo{UserID: user.UserID, GroupID: user.GroupID}, true
 }
 
 // Server serves the captive portal login page on HTTP (RF06.1).
 type Server struct {
 	httpServer *http.Server
 	resolver   *identity.Resolver
-	creds      *Credentials
+	auth       Authenticator
 	sessionTTL time.Duration
 }
 
-func NewServer(addr string, resolver *identity.Resolver, creds *Credentials, sessionTTL time.Duration) *Server {
+func NewServer(addr string, resolver *identity.Resolver, auth Authenticator, sessionTTL time.Duration) *Server {
 	s := &Server{
 		resolver:   resolver,
-		creds:      creds,
+		auth:       auth,
 		sessionTTL: sessionTTL,
 	}
 
@@ -64,8 +85,8 @@ func (s *Server) Shutdown() {
 
 // handleLogin serves the login page (RF06.4).
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
-	errMsg := r.URL.Query().Get("error")
-	redirectURL := r.URL.Query().Get("redirect")
+	errMsg := html.EscapeString(r.URL.Query().Get("error"))
+	redirectURL := html.EscapeString(r.URL.Query().Get("redirect"))
 
 	errorHTML := ""
 	if errMsg != "" {
@@ -141,10 +162,9 @@ func (s *Server) handleAuth(w http.ResponseWriter, r *http.Request) {
 	password := r.FormValue("password")
 	redirectURL := r.FormValue("redirect")
 
-	// Validate credentials
-	user, ok := s.creds.Users[username]
-	if !ok || user.Password != password {
-		// RF06.5: clear error message for invalid credentials
+	// Validate credentials via authenticator (static or database)
+	user, ok := s.auth.Authenticate(username, password)
+	if !ok {
 		fmt.Printf("Captive: login falhou para '%s' de %s\n", username, r.RemoteAddr)
 		http.Redirect(w, r, "/?error=Usuário ou senha inválidos&redirect="+redirectURL, http.StatusSeeOther)
 		return
@@ -170,7 +190,8 @@ func (s *Server) handleAuth(w http.ResponseWriter, r *http.Request) {
 	fmt.Printf("Captive: login OK — user=%s, ip=%s, group=%d\n", username, host, user.GroupID)
 
 	// RF06.6: redirect to original URL if available
-	if redirectURL != "" {
+	// Validate redirect URL to prevent open redirect (V03)
+	if redirectURL != "" && isValidRedirect(redirectURL) {
 		http.Redirect(w, r, redirectURL, http.StatusSeeOther)
 		return
 	}
@@ -203,4 +224,20 @@ func (s *Server) handleAuth(w http.ResponseWriter, r *http.Request) {
     </div>
 </body>
 </html>`)
+}
+
+func isValidRedirect(url string) bool {
+	// Allow relative paths
+	if len(url) > 0 && url[0] == '/' {
+		// Block protocol-relative URLs (//evil.com)
+		if len(url) > 1 && url[1] == '/' {
+			return false
+		}
+		return true
+	}
+	// Allow http and https only
+	if len(url) > 7 && (url[:7] == "http://" || url[:8] == "https://") {
+		return true
+	}
+	return false
 }
