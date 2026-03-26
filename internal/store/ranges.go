@@ -75,3 +75,56 @@ func (s *Store) ListBlocklists(ctx context.Context) ([]BlocklistInfo, error) {
 	}
 	return lists, nil
 }
+
+// UpdateIPRange updates a range's settings.
+func (s *Store) UpdateIPRange(ctx context.Context, id int, cidr string, groupID, authMode int, description string) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE ip_ranges SET cidr = $1::cidr, group_id = $2, auth_mode = $3, description = $4
+		WHERE id = $5
+	`, cidr, groupID, authMode, description, id)
+	if err != nil {
+		return fmt.Errorf("store: update range: %w", err)
+	}
+	return nil
+}
+
+// DeleteIPRange removes an IP range.
+func (s *Store) DeleteIPRange(ctx context.Context, id int) error {
+	_, err := s.pool.Exec(ctx, `DELETE FROM ip_ranges WHERE id = $1`, id)
+	if err != nil {
+		return fmt.Errorf("store: delete range: %w", err)
+	}
+	return nil
+}
+
+// UpdateBlocklist updates a blocklist's settings.
+func (s *Store) UpdateBlocklist(ctx context.Context, id int, name string, active bool) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE blocklists SET name = $1, active = $2, updated_at = NOW() WHERE id = $3
+	`, name, active, id)
+	if err != nil {
+		return fmt.Errorf("store: update blocklist: %w", err)
+	}
+	return nil
+}
+
+// DeleteBlocklist removes a blocklist and its entries.
+func (s *Store) DeleteBlocklist(ctx context.Context, id int) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("store: begin tx: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	_, err = tx.Exec(ctx, `DELETE FROM blocklist_entries WHERE list_id = $1`, id)
+	if err != nil {
+		return fmt.Errorf("store: delete entries: %w", err)
+	}
+
+	_, err = tx.Exec(ctx, `DELETE FROM blocklists WHERE id = $1`, id)
+	if err != nil {
+		return fmt.Errorf("store: delete blocklist: %w", err)
+	}
+
+	return tx.Commit(ctx)
+}

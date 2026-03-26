@@ -430,6 +430,169 @@ func (h *Handlers) CreateRange(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]int{"id": id})
 }
 
+// --- Update/Delete Users ---
+
+type updateUserRequest struct {
+	Username string `json:"username"`
+	Role     int    `json:"role"`
+	Active   bool   `json:"active"`
+}
+
+func (h *Handlers) UpdateUser(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, "ID inválido", http.StatusBadRequest)
+		return
+	}
+
+	var req updateUserRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, "JSON inválido", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.store.UpdateAdminUser(r.Context(), id, req.Username, req.Role, req.Active); err != nil {
+		writeError(w, fmt.Sprintf("Erro: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, map[string]string{"status": "updated"})
+}
+
+func (h *Handlers) DeleteUser(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, "ID inválido", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.store.DeleteAdminUser(r.Context(), id); err != nil {
+		writeError(w, fmt.Sprintf("Erro: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, map[string]string{"status": "deleted"})
+}
+
+// --- Update/Delete Groups ---
+
+func (h *Handlers) UpdateGroup(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, "ID inválido", http.StatusBadRequest)
+		return
+	}
+
+	var req createGroupRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, "JSON inválido", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.store.UpdateGroup(r.Context(), id, req.Name, req.Description); err != nil {
+		writeError(w, fmt.Sprintf("Erro: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, map[string]string{"status": "updated"})
+}
+
+func (h *Handlers) DeleteGroup(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, "ID inválido", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.store.DeleteGroup(r.Context(), id); err != nil {
+		writeError(w, fmt.Sprintf("Erro: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, map[string]string{"status": "deleted"})
+}
+
+// --- Update/Delete Blocklists ---
+
+type updateBlocklistRequest struct {
+	Name   string `json:"name"`
+	Active bool   `json:"active"`
+}
+
+func (h *Handlers) UpdateBlocklist(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, "ID inválido", http.StatusBadRequest)
+		return
+	}
+
+	var req updateBlocklistRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, "JSON inválido", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.store.UpdateBlocklist(r.Context(), id, req.Name, req.Active); err != nil {
+		writeError(w, fmt.Sprintf("Erro: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, map[string]string{"status": "updated"})
+}
+
+func (h *Handlers) DeleteBlocklist(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, "ID inválido", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.store.DeleteBlocklist(r.Context(), id); err != nil {
+		writeError(w, fmt.Sprintf("Erro: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, map[string]string{"status": "deleted"})
+}
+
+// --- Update/Delete Ranges ---
+
+func (h *Handlers) UpdateRange(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, "ID inválido", http.StatusBadRequest)
+		return
+	}
+
+	var req createRangeRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, "JSON inválido", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.store.UpdateIPRange(r.Context(), id, req.CIDR, req.GroupID, req.AuthMode, req.Description); err != nil {
+		writeError(w, fmt.Sprintf("Erro: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, map[string]string{"status": "updated"})
+}
+
+func (h *Handlers) DeleteRange(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, "ID inválido", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.store.DeleteIPRange(r.Context(), id); err != nil {
+		writeError(w, fmt.Sprintf("Erro: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, map[string]string{"status": "deleted"})
+}
+
 // --- Helpers ---
 
 func writeJSON(w http.ResponseWriter, data interface{}) {

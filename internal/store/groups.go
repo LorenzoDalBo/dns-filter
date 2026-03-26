@@ -39,3 +39,23 @@ func (s *Store) CreateGroup(ctx context.Context, name, description string) (int,
 	}
 	return id, nil
 }
+
+// UpdateGroup updates a group's name and description.
+func (s *Store) UpdateGroup(ctx context.Context, id int, name, description string) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE groups SET name = $1, description = $2 WHERE id = $3
+	`, name, description, id)
+	if err != nil {
+		return fmt.Errorf("store: update group: %w", err)
+	}
+	return nil
+}
+
+// DeleteGroup removes a group.
+func (s *Store) DeleteGroup(ctx context.Context, id int) error {
+	_, err := s.pool.Exec(ctx, `DELETE FROM groups WHERE id = $1`, id)
+	if err != nil {
+		return fmt.Errorf("store: delete group: %w", err)
+	}
+	return nil
+}
