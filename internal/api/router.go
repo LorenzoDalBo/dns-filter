@@ -63,5 +63,8 @@ func NewRouter(h *Handlers) http.Handler {
 		})
 	})
 
+	// Serve React dashboard from embedded frontend (RNF07.1)
+	r.NotFound(FrontendHandler().ServeHTTP)
+
 	return r
 }

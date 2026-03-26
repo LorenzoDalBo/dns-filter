@@ -158,18 +158,16 @@ func main() {
 	}()
 
 	// REST API (RF10.1-RF10.6)
-	if db != nil {
-		apiHandlers := api.NewHandlers(db, dnsCache, filterEngine, identityResolver, logPipeline, blacklist, whitelist, cfg.API.JWTSecret)
-		apiRouter := api.NewRouter(apiHandlers)
-		apiServer := &http.Server{Addr: cfg.API.Listen, Handler: apiRouter}
+	apiHandlers := api.NewHandlers(db, dnsCache, filterEngine, identityResolver, logPipeline, blacklist, whitelist, cfg.API.JWTSecret)
+	apiRouter := api.NewRouter(apiHandlers)
+	apiServer := &http.Server{Addr: cfg.API.Listen, Handler: apiRouter}
 
-		go func() {
-			fmt.Printf("API REST rodando em %s\n", cfg.API.Listen)
-			if err := apiServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-				fmt.Printf("API erro: %v\n", err)
-			}
-		}()
-	}
+	go func() {
+		fmt.Printf("API REST + Dashboard rodando em %s\n", cfg.API.Listen)
+		if err := apiServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			fmt.Printf("API erro: %v\n", err)
+		}
+	}()
 
 	// DNS Server
 	blockIP := net.ParseIP(cfg.DNS.BlockIP)
