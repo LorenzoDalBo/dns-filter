@@ -32,6 +32,9 @@ func NewRouter(h *Handlers) http.Handler {
 		// Refresh token (RNF03.3)
 		r.Post("/auth/refresh", h.RefreshToken)
 
+		// Dashboard stats (RF08.1)
+		r.Get("/dashboard", h.GetDashboardStats)
+
 		// Metrics (RF10.6)
 		r.Get("/metrics", h.GetMetrics)
 

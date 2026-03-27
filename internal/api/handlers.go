@@ -220,6 +220,17 @@ func (h *Handlers) GetMetrics(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, metrics)
 }
 
+// --- Dashboard Stats ---
+
+func (h *Handlers) GetDashboardStats(w http.ResponseWriter, r *http.Request) {
+	stats, err := h.store.GetDashboardStats(r.Context())
+	if err != nil {
+		writeError(w, fmt.Sprintf("Erro: %v", err), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, stats)
+}
+
 // --- Cache ---
 
 func (h *Handlers) InvalidateCache(w http.ResponseWriter, r *http.Request) {

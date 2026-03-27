@@ -20,13 +20,13 @@ type LogEntry struct {
 }
 
 type LogFilter struct {
-	ClientIP  string
-	Domain    string
-	Action    string
-	DateFrom  string
-	DateTo    string
-	Limit     int
-	Offset    int
+	ClientIP string
+	Domain   string
+	Action   string
+	DateFrom string
+	DateTo   string
+	Limit    int
+	Offset   int
 }
 
 // QueryLogs returns paginated log entries with filters (RF08.2, RF08.3).
@@ -101,4 +101,92 @@ func (s *Store) QueryLogs(ctx context.Context, f LogFilter) ([]LogEntry, int, er
 	}
 
 	return logs, total, nil
+}
+
+// TopItem represents a domain or client with its count.
+type TopItem struct {
+	Name  string `json:"name"`
+	Count int    `json:"count"`
+}
+
+// DashboardStats returns aggregated statistics for the dashboard (RF08.1).
+type DashboardStats struct {
+	TotalToday     int       `json:"total_today"`
+	TotalWeek      int       `json:"total_week"`
+	TotalMonth     int       `json:"total_month"`
+	BlockedPercent float64   `json:"blocked_percent"`
+	TopDomains     []TopItem `json:"top_domains"`
+	TopBlocked     []TopItem `json:"top_blocked"`
+	TopClients     []TopItem `json:"top_clients"`
+}
+
+// GetDashboardStats returns aggregated stats for the dashboard (RF08.1).
+func (s *Store) GetDashboardStats(ctx context.Context) (*DashboardStats, error) {
+	stats := &DashboardStats{}
+
+	// Total queries today, this week, this month
+	err := s.pool.QueryRow(ctx, `
+		SELECT
+			COUNT(*) FILTER (WHERE queried_at >= CURRENT_DATE) as today,
+			COUNT(*) FILTER (WHERE queried_at >= CURRENT_DATE - INTERVAL '7 days') as week,
+			COUNT(*) FILTER (WHERE queried_at >= CURRENT_DATE - INTERVAL '30 days') as month
+		FROM dns_query_logs
+		WHERE queried_at >= CURRENT_DATE - INTERVAL '30 days'
+	`).Scan(&stats.TotalToday, &stats.TotalWeek, &stats.TotalMonth)
+	if err != nil {
+		return nil, fmt.Errorf("store: dashboard totals: %w", err)
+	}
+
+	// Blocked percentage (today)
+	if stats.TotalToday > 0 {
+		var blocked int
+		err = s.pool.QueryRow(ctx, `
+			SELECT COUNT(*) FROM dns_query_logs
+			WHERE queried_at >= CURRENT_DATE AND action = 1
+		`).Scan(&blocked)
+		if err == nil {
+			stats.BlockedPercent = float64(blocked) / float64(stats.TotalToday) * 100
+		}
+	}
+
+	// Top 10 domains (today)
+	stats.TopDomains, _ = s.queryTopItems(ctx, `
+		SELECT domain, COUNT(*) as cnt FROM dns_query_logs
+		WHERE queried_at >= CURRENT_DATE
+		GROUP BY domain ORDER BY cnt DESC LIMIT 10
+	`)
+
+	// Top 10 blocked domains (today)
+	stats.TopBlocked, _ = s.queryTopItems(ctx, `
+		SELECT domain, COUNT(*) as cnt FROM dns_query_logs
+		WHERE queried_at >= CURRENT_DATE AND action = 1
+		GROUP BY domain ORDER BY cnt DESC LIMIT 10
+	`)
+
+	// Top 10 clients by volume (today)
+	stats.TopClients, _ = s.queryTopItems(ctx, `
+		SELECT client_ip::text, COUNT(*) as cnt FROM dns_query_logs
+		WHERE queried_at >= CURRENT_DATE
+		GROUP BY client_ip ORDER BY cnt DESC LIMIT 10
+	`)
+
+	return stats, nil
+}
+
+func (s *Store) queryTopItems(ctx context.Context, query string) ([]TopItem, error) {
+	rows, err := s.pool.Query(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var items []TopItem
+	for rows.Next() {
+		var item TopItem
+		if err := rows.Scan(&item.Name, &item.Count); err != nil {
+			continue
+		}
+		items = append(items, item)
+	}
+	return items, nil
 }
