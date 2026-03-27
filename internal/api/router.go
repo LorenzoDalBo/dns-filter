@@ -68,6 +68,9 @@ func NewRouter(h *Handlers) http.Handler {
 			r.Post("/lists/{id}/entries", h.AddEntries)
 			r.Post("/lists/reload", h.ReloadLists)
 
+			r.Get("/lists/{id}/categories", h.GetBlocklistCategories)
+			r.Put("/lists/{id}/categories", h.SetBlocklistCategories)
+
 			// IP Ranges CRUD (RF08.7, RF10.1)
 			r.Get("/ranges", h.ListRanges)
 			r.Post("/ranges", h.CreateRange)

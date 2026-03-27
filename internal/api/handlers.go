@@ -705,6 +705,52 @@ func (h *Handlers) SetGroupPolicy(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]string{"status": "updated"})
 }
 
+// --- Blocklist Categories ---
+
+func (h *Handlers) GetBlocklistCategories(w http.ResponseWriter, r *http.Request) {
+	listID, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, "ID inválido", http.StatusBadRequest)
+		return
+	}
+
+	cats, err := h.store.GetBlocklistCategories(r.Context(), listID)
+	if err != nil {
+		writeError(w, fmt.Sprintf("Erro: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, map[string]interface{}{
+		"list_id":    listID,
+		"categories": cats,
+	})
+}
+
+type setBlocklistCategoriesRequest struct {
+	Categories []int `json:"categories"`
+}
+
+func (h *Handlers) SetBlocklistCategories(w http.ResponseWriter, r *http.Request) {
+	listID, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, "ID inválido", http.StatusBadRequest)
+		return
+	}
+
+	var req setBlocklistCategoriesRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, "JSON inválido", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.store.SetBlocklistCategories(r.Context(), listID, req.Categories); err != nil {
+		writeError(w, fmt.Sprintf("Erro: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, map[string]string{"status": "updated"})
+}
+
 // --- Helpers ---
 
 func writeJSON(w http.ResponseWriter, data interface{}) {
