@@ -20,6 +20,12 @@ import (
 )
 
 // Handlers holds all dependencies needed by API endpoints.
+// QueryMetrics provides read access to DNS handler statistics.
+type QueryMetrics interface {
+	QueryCount() uint64
+	AvgLatencyMs() float64
+}
+
 type Handlers struct {
 	store     *store.Store
 	cache     *cache.Cache
@@ -28,11 +34,12 @@ type Handlers struct {
 	logger    *logging.Pipeline
 	black     *filter.Blacklist
 	white     *filter.Blacklist
+	metrics   QueryMetrics
 	jwtSecret []byte
 	startedAt time.Time
 }
 
-func NewHandlers(store *store.Store, cache *cache.Cache, filterEngine *filter.Engine, identityResolver *identity.Resolver, logger *logging.Pipeline, black *filter.Blacklist, white *filter.Blacklist, jwtSecret string) *Handlers {
+func NewHandlers(store *store.Store, cache *cache.Cache, filterEngine *filter.Engine, identityResolver *identity.Resolver, logger *logging.Pipeline, black *filter.Blacklist, white *filter.Blacklist, jwtSecret string, metrics QueryMetrics) *Handlers {
 	return &Handlers{
 		store:     store,
 		cache:     cache,
@@ -41,6 +48,7 @@ func NewHandlers(store *store.Store, cache *cache.Cache, filterEngine *filter.En
 		logger:    logger,
 		black:     black,
 		white:     white,
+		metrics:   metrics,
 		jwtSecret: []byte(jwtSecret),
 		startedAt: time.Now(),
 	}
@@ -184,15 +192,25 @@ func (h *Handlers) HealthCheck(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handlers) GetMetrics(w http.ResponseWriter, r *http.Request) {
 	cacheStats := h.cache.GetStats()
+	uptime := time.Since(h.startedAt).Seconds()
 
 	metrics := map[string]interface{}{
-		"uptime_seconds":    int(time.Since(h.startedAt).Seconds()),
+		"uptime_seconds":    int(uptime),
 		"cache_hits":        cacheStats.Hits,
 		"cache_misses":      cacheStats.Misses,
 		"cache_entries":     h.cache.Size(),
 		"blacklist_domains": h.black.Size(),
 		"whitelist_domains": h.white.Size(),
 		"active_sessions":   h.identity.SessionCount(),
+	}
+
+	if h.metrics != nil {
+		totalQueries := h.metrics.QueryCount()
+		metrics["total_queries"] = totalQueries
+		metrics["avg_latency_ms"] = h.metrics.AvgLatencyMs()
+		if uptime > 0 {
+			metrics["queries_per_second"] = float64(totalQueries) / uptime
+		}
 	}
 
 	if h.logger != nil {

@@ -35,8 +35,10 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Validate JWT secret
+	// Initialize structured logger (RNF04.4)
 	logger.Init(cfg.Log.Level)
+
+	// Validate JWT secret
 	if cfg.API.JWTSecret == "" || cfg.API.JWTSecret == "TROQUE-ESTE-SECRET-EM-PRODUCAO-32chars" {
 		fmt.Println("AVISO: JWT secret não configurado! Troque em configs/dnsfilter.yaml ou defina JWT_SECRET")
 	}
@@ -147,6 +149,7 @@ func main() {
 			fmt.Printf("Reloaded: %d blacklist + %d whitelist\n",
 				len(blackDomains), len(whiteDomains))
 		})
+
 		// External list auto-updater (RF04.2, RF04.3)
 		updater := filter.NewUpdater(db.Pool(), 24*time.Hour)
 		updater.Start()
@@ -154,7 +157,6 @@ func main() {
 		fmt.Println("Log pipeline: desativado (sem PostgreSQL)")
 	}
 
-	// Captive Portal (RF06.1)
 	// Captive Portal (RF06.1)
 	var captiveAuth captive.Authenticator
 	if db != nil {
@@ -174,10 +176,18 @@ func main() {
 		}
 	}()
 
+	// DNS Server (must be created before API for metrics access)
+	blockIP := net.ParseIP(cfg.DNS.BlockIP)
+	portalIP := net.ParseIP(cfg.DNS.PortalIP)
+
+	resolver := dnsserver.NewResolver(cfg.DNS.Upstreams)
+	handler := dnsserver.NewHandler(resolver, dnsCache, filterEngine, identityResolver, logPipeline, blockIP, portalIP)
+	server := dnsserver.NewServer(cfg.DNS.Listen, handler)
+
 	// REST API (RF10.1-RF10.6)
 	var apiServer *http.Server
 	if db != nil {
-		apiHandlers := api.NewHandlers(db, dnsCache, filterEngine, identityResolver, logPipeline, blacklist, whitelist, cfg.API.JWTSecret)
+		apiHandlers := api.NewHandlers(db, dnsCache, filterEngine, identityResolver, logPipeline, blacklist, whitelist, cfg.API.JWTSecret, handler)
 		apiRouter := api.NewRouter(apiHandlers)
 		apiServer = &http.Server{Addr: cfg.API.Listen, Handler: apiRouter}
 	} else {
@@ -200,14 +210,6 @@ func main() {
 		}()
 	}
 
-	// DNS Server
-	blockIP := net.ParseIP(cfg.DNS.BlockIP)
-	portalIP := net.ParseIP(cfg.DNS.PortalIP)
-
-	resolver := dnsserver.NewResolver(cfg.DNS.Upstreams)
-	handler := dnsserver.NewHandler(resolver, dnsCache, filterEngine, identityResolver, logPipeline, blockIP, portalIP)
-	server := dnsserver.NewServer(cfg.DNS.Listen, handler)
-
 	// Graceful shutdown (RNF02.4)
 	go func() {
 		sigChan := make(chan os.Signal, 1)
@@ -229,7 +231,7 @@ func main() {
 		server.Shutdown()
 	}()
 
-	fmt.Printf("DNS Filter v1.0.0\n")
+	fmt.Printf("DNS Filter v1.3.0\n")
 	fmt.Printf("DNS: %s\n", cfg.DNS.Listen)
 	fmt.Printf("API: %s\n", cfg.API.Listen)
 	fmt.Printf("Captive Portal: %s\n", cfg.Captive.Listen)
