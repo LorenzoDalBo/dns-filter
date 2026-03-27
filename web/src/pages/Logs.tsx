@@ -72,6 +72,8 @@ export default function Logs() {
   const [domain, setDomain] = useState('')
   const [action, setAction] = useState('')
   const [clientIP, setClientIP] = useState('')
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
   const limit = 20
 
   const fetchLogs = async () => {
@@ -82,6 +84,8 @@ export default function Logs() {
       if (domain) params.set('domain', domain)
       if (action) params.set('action', action)
       if (clientIP) params.set('client_ip', clientIP)
+      if (dateFrom) params.set('date_from', dateFrom)
+      if (dateTo) params.set('date_to', dateTo)
 
       const res = await api.get(`/logs?${params}`)
       setData(res.data.data || [])
@@ -93,7 +97,7 @@ export default function Logs() {
 
   useEffect(() => {
     fetchLogs()
-  }, [offset, domain, action, clientIP])
+  }, [offset, domain, action, clientIP, dateFrom, dateTo])
 
   const table = useReactTable({
     data,
@@ -134,6 +138,20 @@ export default function Logs() {
           <option value="1">Bloqueado</option>
           <option value="2">Cache</option>
         </select>
+        <input
+          type="datetime-local"
+          value={dateFrom}
+          onChange={(e) => { setDateFrom(e.target.value); setOffset(0) }}
+          className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          title="Data inicial"
+        />
+        <input
+          type="datetime-local"
+          value={dateTo}
+          onChange={(e) => { setDateTo(e.target.value); setOffset(0) }}
+          className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          title="Data final"
+        />
         <button
           onClick={fetchLogs}
           className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 transition-colors"

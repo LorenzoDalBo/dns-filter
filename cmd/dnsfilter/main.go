@@ -35,8 +35,10 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Validate JWT secret
+	// Initialize structured logger (RNF04.4)
 	logger.Init(cfg.Log.Level)
+
+	// Validate JWT secret
 	if cfg.API.JWTSecret == "" || cfg.API.JWTSecret == "TROQUE-ESTE-SECRET-EM-PRODUCAO-32chars" {
 		fmt.Println("AVISO: JWT secret não configurado! Troque em configs/dnsfilter.yaml ou defina JWT_SECRET")
 	}
@@ -147,6 +149,22 @@ func main() {
 			fmt.Printf("Reloaded: %d blacklist + %d whitelist\n",
 				len(blackDomains), len(whiteDomains))
 		})
+		// Load category-domain mappings (RF03.3)
+		catDomains, err := db.LoadCategoryDomains(ctx)
+		if err != nil {
+			fmt.Printf("Aviso: erro ao carregar categorias: %v\n", err)
+		} else {
+			filterEngine.LoadCategories(catDomains)
+		}
+
+		// Load group policies (RF03.4)
+		policies, err := db.LoadGroupPolicies(ctx)
+		if err != nil {
+			fmt.Printf("Aviso: erro ao carregar políticas: %v\n", err)
+		} else {
+			filterEngine.LoadPolicies(policies)
+		}
+
 		// External list auto-updater (RF04.2, RF04.3)
 		updater := filter.NewUpdater(db.Pool(), 24*time.Hour)
 		updater.Start()
@@ -154,7 +172,6 @@ func main() {
 		fmt.Println("Log pipeline: desativado (sem PostgreSQL)")
 	}
 
-	// Captive Portal (RF06.1)
 	// Captive Portal (RF06.1)
 	var captiveAuth captive.Authenticator
 	if db != nil {
@@ -174,32 +191,39 @@ func main() {
 		}
 	}()
 
-	// REST API (RF10.1-RF10.6)
-	apiHandlers := api.NewHandlers(db, dnsCache, filterEngine, identityResolver, logPipeline, blacklist, whitelist, cfg.API.JWTSecret)
-	apiRouter := api.NewRouter(apiHandlers)
-	apiServer := &http.Server{Addr: cfg.API.Listen, Handler: apiRouter}
-
-	go func() {
-		if cfg.API.TLSCert != "" && cfg.API.TLSKey != "" {
-			fmt.Printf("API REST + Dashboard rodando em %s (HTTPS)\n", cfg.API.Listen)
-			if err := apiServer.ListenAndServeTLS(cfg.API.TLSCert, cfg.API.TLSKey); err != nil && err != http.ErrServerClosed {
-				fmt.Printf("API erro: %v\n", err)
-			}
-		} else {
-			fmt.Printf("API REST + Dashboard rodando em %s (HTTP)\n", cfg.API.Listen)
-			if err := apiServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-				fmt.Printf("API erro: %v\n", err)
-			}
-		}
-	}()
-
-	// DNS Server
+	// DNS Server (must be created before API for metrics access)
 	blockIP := net.ParseIP(cfg.DNS.BlockIP)
 	portalIP := net.ParseIP(cfg.DNS.PortalIP)
 
 	resolver := dnsserver.NewResolver(cfg.DNS.Upstreams)
 	handler := dnsserver.NewHandler(resolver, dnsCache, filterEngine, identityResolver, logPipeline, blockIP, portalIP)
 	server := dnsserver.NewServer(cfg.DNS.Listen, handler)
+
+	// REST API (RF10.1-RF10.6)
+	var apiServer *http.Server
+	if db != nil {
+		apiHandlers := api.NewHandlers(db, dnsCache, filterEngine, identityResolver, logPipeline, blacklist, whitelist, cfg.API.JWTSecret, handler)
+		apiRouter := api.NewRouter(apiHandlers)
+		apiServer = &http.Server{Addr: cfg.API.Listen, Handler: apiRouter}
+	} else {
+		fmt.Println("API REST: desativada (sem PostgreSQL)")
+	}
+
+	if apiServer != nil {
+		go func() {
+			if cfg.API.TLSCert != "" && cfg.API.TLSKey != "" {
+				fmt.Printf("API REST + Dashboard rodando em %s (HTTPS)\n", cfg.API.Listen)
+				if err := apiServer.ListenAndServeTLS(cfg.API.TLSCert, cfg.API.TLSKey); err != nil && err != http.ErrServerClosed {
+					fmt.Printf("API erro: %v\n", err)
+				}
+			} else {
+				fmt.Printf("API REST + Dashboard rodando em %s (HTTP)\n", cfg.API.Listen)
+				if err := apiServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+					fmt.Printf("API erro: %v\n", err)
+				}
+			}
+		}()
+	}
 
 	// Graceful shutdown (RNF02.4)
 	go func() {
@@ -222,7 +246,7 @@ func main() {
 		server.Shutdown()
 	}()
 
-	fmt.Printf("DNS Filter v1.0.0\n")
+	fmt.Printf("DNS Filter v1.3.0\n")
 	fmt.Printf("DNS: %s\n", cfg.DNS.Listen)
 	fmt.Printf("API: %s\n", cfg.API.Listen)
 	fmt.Printf("Captive Portal: %s\n", cfg.Captive.Listen)

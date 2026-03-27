@@ -128,3 +128,50 @@ func (s *Store) DeleteBlocklist(ctx context.Context, id int) error {
 
 	return tx.Commit(ctx)
 }
+
+// SetBlocklistCategories associates a blocklist with categories (RF04.5).
+func (s *Store) SetBlocklistCategories(ctx context.Context, listID int, categoryIDs []int) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("store: begin tx: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	_, err = tx.Exec(ctx, `DELETE FROM blocklist_categories WHERE list_id = $1`, listID)
+	if err != nil {
+		return fmt.Errorf("store: clear categories: %w", err)
+	}
+
+	for _, catID := range categoryIDs {
+		_, err = tx.Exec(ctx, `
+			INSERT INTO blocklist_categories (list_id, category_id) VALUES ($1, $2)
+			ON CONFLICT DO NOTHING
+		`, listID, catID)
+		if err != nil {
+			return fmt.Errorf("store: insert category: %w", err)
+		}
+	}
+
+	return tx.Commit(ctx)
+}
+
+// GetBlocklistCategories returns category IDs for a blocklist.
+func (s *Store) GetBlocklistCategories(ctx context.Context, listID int) ([]int, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT category_id FROM blocklist_categories WHERE list_id = $1
+	`, listID)
+	if err != nil {
+		return nil, fmt.Errorf("store: get blocklist categories: %w", err)
+	}
+	defer rows.Close()
+
+	var cats []int
+	for rows.Next() {
+		var catID int
+		if err := rows.Scan(&catID); err != nil {
+			continue
+		}
+		cats = append(cats, catID)
+	}
+	return cats, nil
+}

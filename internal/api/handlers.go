@@ -20,6 +20,12 @@ import (
 )
 
 // Handlers holds all dependencies needed by API endpoints.
+// QueryMetrics provides read access to DNS handler statistics.
+type QueryMetrics interface {
+	QueryCount() uint64
+	AvgLatencyMs() float64
+}
+
 type Handlers struct {
 	store     *store.Store
 	cache     *cache.Cache
@@ -28,11 +34,12 @@ type Handlers struct {
 	logger    *logging.Pipeline
 	black     *filter.Blacklist
 	white     *filter.Blacklist
+	metrics   QueryMetrics
 	jwtSecret []byte
 	startedAt time.Time
 }
 
-func NewHandlers(store *store.Store, cache *cache.Cache, filterEngine *filter.Engine, identityResolver *identity.Resolver, logger *logging.Pipeline, black *filter.Blacklist, white *filter.Blacklist, jwtSecret string) *Handlers {
+func NewHandlers(store *store.Store, cache *cache.Cache, filterEngine *filter.Engine, identityResolver *identity.Resolver, logger *logging.Pipeline, black *filter.Blacklist, white *filter.Blacklist, jwtSecret string, metrics QueryMetrics) *Handlers {
 	return &Handlers{
 		store:     store,
 		cache:     cache,
@@ -41,6 +48,7 @@ func NewHandlers(store *store.Store, cache *cache.Cache, filterEngine *filter.En
 		logger:    logger,
 		black:     black,
 		white:     white,
+		metrics:   metrics,
 		jwtSecret: []byte(jwtSecret),
 		startedAt: time.Now(),
 	}
@@ -184,9 +192,10 @@ func (h *Handlers) HealthCheck(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handlers) GetMetrics(w http.ResponseWriter, r *http.Request) {
 	cacheStats := h.cache.GetStats()
+	uptime := time.Since(h.startedAt).Seconds()
 
 	metrics := map[string]interface{}{
-		"uptime_seconds":    int(time.Since(h.startedAt).Seconds()),
+		"uptime_seconds":    int(uptime),
 		"cache_hits":        cacheStats.Hits,
 		"cache_misses":      cacheStats.Misses,
 		"cache_entries":     h.cache.Size(),
@@ -195,11 +204,31 @@ func (h *Handlers) GetMetrics(w http.ResponseWriter, r *http.Request) {
 		"active_sessions":   h.identity.SessionCount(),
 	}
 
+	if h.metrics != nil {
+		totalQueries := h.metrics.QueryCount()
+		metrics["total_queries"] = totalQueries
+		metrics["avg_latency_ms"] = h.metrics.AvgLatencyMs()
+		if uptime > 0 {
+			metrics["queries_per_second"] = float64(totalQueries) / uptime
+		}
+	}
+
 	if h.logger != nil {
 		metrics["log_pending"] = h.logger.Pending()
 	}
 
 	writeJSON(w, metrics)
+}
+
+// --- Dashboard Stats ---
+
+func (h *Handlers) GetDashboardStats(w http.ResponseWriter, r *http.Request) {
+	stats, err := h.store.GetDashboardStats(r.Context())
+	if err != nil {
+		writeError(w, fmt.Sprintf("Erro: %v", err), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, stats)
 }
 
 // --- Cache ---
@@ -229,6 +258,8 @@ func (h *Handlers) GetLogs(w http.ResponseWriter, r *http.Request) {
 		ClientIP: q.Get("client_ip"),
 		Domain:   q.Get("domain"),
 		Action:   q.Get("action"),
+		DateFrom: q.Get("date_from"),
+		DateTo:   q.Get("date_to"),
 		Limit:    limit,
 		Offset:   offset,
 	})
@@ -617,6 +648,107 @@ func (h *Handlers) DeleteRange(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, map[string]string{"status": "deleted"})
+}
+
+// --- Categories & Policies ---
+
+func (h *Handlers) ListCategories(w http.ResponseWriter, r *http.Request) {
+	cats, err := h.store.ListCategories(r.Context())
+	if err != nil {
+		writeError(w, fmt.Sprintf("Erro: %v", err), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, cats)
+}
+
+func (h *Handlers) GetGroupPolicy(w http.ResponseWriter, r *http.Request) {
+	groupID, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, "ID inválido", http.StatusBadRequest)
+		return
+	}
+
+	cats, err := h.store.GetGroupBlockedCategories(r.Context(), groupID)
+	if err != nil {
+		writeError(w, fmt.Sprintf("Erro: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, map[string]interface{}{
+		"group_id":           groupID,
+		"blocked_categories": cats,
+	})
+}
+
+type setPolicyRequest struct {
+	Categories []int `json:"categories"`
+}
+
+func (h *Handlers) SetGroupPolicy(w http.ResponseWriter, r *http.Request) {
+	groupID, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, "ID inválido", http.StatusBadRequest)
+		return
+	}
+
+	var req setPolicyRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, "JSON inválido", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.store.SetGroupPolicy(r.Context(), groupID, req.Categories); err != nil {
+		writeError(w, fmt.Sprintf("Erro: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, map[string]string{"status": "updated"})
+}
+
+// --- Blocklist Categories ---
+
+func (h *Handlers) GetBlocklistCategories(w http.ResponseWriter, r *http.Request) {
+	listID, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, "ID inválido", http.StatusBadRequest)
+		return
+	}
+
+	cats, err := h.store.GetBlocklistCategories(r.Context(), listID)
+	if err != nil {
+		writeError(w, fmt.Sprintf("Erro: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, map[string]interface{}{
+		"list_id":    listID,
+		"categories": cats,
+	})
+}
+
+type setBlocklistCategoriesRequest struct {
+	Categories []int `json:"categories"`
+}
+
+func (h *Handlers) SetBlocklistCategories(w http.ResponseWriter, r *http.Request) {
+	listID, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, "ID inválido", http.StatusBadRequest)
+		return
+	}
+
+	var req setBlocklistCategoriesRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, "JSON inválido", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.store.SetBlocklistCategories(r.Context(), listID, req.Categories); err != nil {
+		writeError(w, fmt.Sprintf("Erro: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, map[string]string{"status": "updated"})
 }
 
 // --- Helpers ---

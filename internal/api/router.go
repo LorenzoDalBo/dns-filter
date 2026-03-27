@@ -32,6 +32,9 @@ func NewRouter(h *Handlers) http.Handler {
 		// Refresh token (RNF03.3)
 		r.Post("/auth/refresh", h.RefreshToken)
 
+		// Dashboard stats (RF08.1)
+		r.Get("/dashboard", h.GetDashboardStats)
+
 		// Metrics (RF10.6)
 		r.Get("/metrics", h.GetMetrics)
 
@@ -64,6 +67,9 @@ func NewRouter(h *Handlers) http.Handler {
 			r.Delete("/lists/{id}", h.DeleteBlocklist)
 			r.Post("/lists/{id}/entries", h.AddEntries)
 			r.Post("/lists/reload", h.ReloadLists)
+
+			r.Get("/lists/{id}/categories", h.GetBlocklistCategories)
+			r.Put("/lists/{id}/categories", h.SetBlocklistCategories)
 
 			// IP Ranges CRUD (RF08.7, RF10.1)
 			r.Get("/ranges", h.ListRanges)

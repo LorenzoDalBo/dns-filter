@@ -3,6 +3,7 @@ package dns
 import (
 	"fmt"
 	"net"
+	"sync/atomic"
 	"time"
 
 	"github.com/LorenzoDalBo/dns-filter/internal/cache"
@@ -15,13 +16,15 @@ import (
 // Handler orchestrates DNS query processing.
 // Pipeline: Identity → Policy Engine → Cache → Upstream → Log
 type Handler struct {
-	resolver *Resolver
-	cache    *cache.Cache
-	filter   *filter.Engine
-	identity *identity.Resolver
-	logger   *logging.Pipeline
-	blockIP  net.IP
-	portalIP net.IP
+	resolver   *Resolver
+	cache      *cache.Cache
+	filter     *filter.Engine
+	identity   *identity.Resolver
+	logger     *logging.Pipeline
+	blockIP    net.IP
+	portalIP   net.IP
+	queryCount atomic.Uint64
+	totalLatNs atomic.Int64
 }
 
 func NewHandler(resolver *Resolver, cache *cache.Cache, filter *filter.Engine, identityResolver *identity.Resolver, logger *logging.Pipeline, blockIP net.IP, portalIP net.IP) *Handler {
@@ -36,12 +39,31 @@ func NewHandler(resolver *Resolver, cache *cache.Cache, filter *filter.Engine, i
 	}
 }
 
+// QueryCount returns total queries processed.
+func (h *Handler) QueryCount() uint64 {
+	return h.queryCount.Load()
+}
+
+// AvgLatencyMs returns average response latency in milliseconds.
+func (h *Handler) AvgLatencyMs() float64 {
+	count := h.queryCount.Load()
+	if count == 0 {
+		return 0
+	}
+	totalNs := h.totalLatNs.Load()
+	return float64(totalNs) / float64(count) / 1e6
+}
+
 func (h *Handler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 	if len(r.Question) == 0 {
 		return
 	}
 
 	start := time.Now()
+	defer func() {
+		h.queryCount.Add(1)
+		h.totalLatNs.Add(time.Since(start).Nanoseconds())
+	}()
 
 	question := r.Question[0]
 	qName := question.Name
@@ -73,8 +95,8 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 		return
 	}
 
-	// Step 3: Policy Engine — ALWAYS runs (RF03.1)
-	result := h.filter.Evaluate(qName)
+	// Step 3: Policy Engine — ALWAYS runs (RF03.1, RF03.4)
+	result := h.filter.EvaluateForGroup(qName, id.GroupID)
 	if result.Action == filter.ActionBlock {
 		fmt.Printf(" [BLOCKED: %s]\n", result.Reason)
 		h.sendBlockResponse(w, r, qName, qType)
