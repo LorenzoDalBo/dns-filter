@@ -175,23 +175,30 @@ func main() {
 	}()
 
 	// REST API (RF10.1-RF10.6)
-	apiHandlers := api.NewHandlers(db, dnsCache, filterEngine, identityResolver, logPipeline, blacklist, whitelist, cfg.API.JWTSecret)
-	apiRouter := api.NewRouter(apiHandlers)
-	apiServer := &http.Server{Addr: cfg.API.Listen, Handler: apiRouter}
+	var apiServer *http.Server
+	if db != nil {
+		apiHandlers := api.NewHandlers(db, dnsCache, filterEngine, identityResolver, logPipeline, blacklist, whitelist, cfg.API.JWTSecret)
+		apiRouter := api.NewRouter(apiHandlers)
+		apiServer = &http.Server{Addr: cfg.API.Listen, Handler: apiRouter}
+	} else {
+		fmt.Println("API REST: desativada (sem PostgreSQL)")
+	}
 
-	go func() {
-		if cfg.API.TLSCert != "" && cfg.API.TLSKey != "" {
-			fmt.Printf("API REST + Dashboard rodando em %s (HTTPS)\n", cfg.API.Listen)
-			if err := apiServer.ListenAndServeTLS(cfg.API.TLSCert, cfg.API.TLSKey); err != nil && err != http.ErrServerClosed {
-				fmt.Printf("API erro: %v\n", err)
+	if apiServer != nil {
+		go func() {
+			if cfg.API.TLSCert != "" && cfg.API.TLSKey != "" {
+				fmt.Printf("API REST + Dashboard rodando em %s (HTTPS)\n", cfg.API.Listen)
+				if err := apiServer.ListenAndServeTLS(cfg.API.TLSCert, cfg.API.TLSKey); err != nil && err != http.ErrServerClosed {
+					fmt.Printf("API erro: %v\n", err)
+				}
+			} else {
+				fmt.Printf("API REST + Dashboard rodando em %s (HTTP)\n", cfg.API.Listen)
+				if err := apiServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+					fmt.Printf("API erro: %v\n", err)
+				}
 			}
-		} else {
-			fmt.Printf("API REST + Dashboard rodando em %s (HTTP)\n", cfg.API.Listen)
-			if err := apiServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-				fmt.Printf("API erro: %v\n", err)
-			}
-		}
-	}()
+		}()
+	}
 
 	// DNS Server
 	blockIP := net.ParseIP(cfg.DNS.BlockIP)
