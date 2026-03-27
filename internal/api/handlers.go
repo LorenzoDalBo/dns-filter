@@ -650,6 +650,61 @@ func (h *Handlers) DeleteRange(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]string{"status": "deleted"})
 }
 
+// --- Categories & Policies ---
+
+func (h *Handlers) ListCategories(w http.ResponseWriter, r *http.Request) {
+	cats, err := h.store.ListCategories(r.Context())
+	if err != nil {
+		writeError(w, fmt.Sprintf("Erro: %v", err), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, cats)
+}
+
+func (h *Handlers) GetGroupPolicy(w http.ResponseWriter, r *http.Request) {
+	groupID, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, "ID inválido", http.StatusBadRequest)
+		return
+	}
+
+	cats, err := h.store.GetGroupBlockedCategories(r.Context(), groupID)
+	if err != nil {
+		writeError(w, fmt.Sprintf("Erro: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, map[string]interface{}{
+		"group_id":           groupID,
+		"blocked_categories": cats,
+	})
+}
+
+type setPolicyRequest struct {
+	Categories []int `json:"categories"`
+}
+
+func (h *Handlers) SetGroupPolicy(w http.ResponseWriter, r *http.Request) {
+	groupID, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, "ID inválido", http.StatusBadRequest)
+		return
+	}
+
+	var req setPolicyRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, "JSON inválido", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.store.SetGroupPolicy(r.Context(), groupID, req.Categories); err != nil {
+		writeError(w, fmt.Sprintf("Erro: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, map[string]string{"status": "updated"})
+}
+
 // --- Helpers ---
 
 func writeJSON(w http.ResponseWriter, data interface{}) {

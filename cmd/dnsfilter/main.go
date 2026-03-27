@@ -149,6 +149,21 @@ func main() {
 			fmt.Printf("Reloaded: %d blacklist + %d whitelist\n",
 				len(blackDomains), len(whiteDomains))
 		})
+		// Load category-domain mappings (RF03.3)
+		catDomains, err := db.LoadCategoryDomains(ctx)
+		if err != nil {
+			fmt.Printf("Aviso: erro ao carregar categorias: %v\n", err)
+		} else {
+			filterEngine.LoadCategories(catDomains)
+		}
+
+		// Load group policies (RF03.4)
+		policies, err := db.LoadGroupPolicies(ctx)
+		if err != nil {
+			fmt.Printf("Aviso: erro ao carregar políticas: %v\n", err)
+		} else {
+			filterEngine.LoadPolicies(policies)
+		}
 
 		// External list auto-updater (RF04.2, RF04.3)
 		updater := filter.NewUpdater(db.Pool(), 24*time.Hour)

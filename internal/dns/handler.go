@@ -95,8 +95,8 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 		return
 	}
 
-	// Step 3: Policy Engine — ALWAYS runs (RF03.1)
-	result := h.filter.Evaluate(qName)
+	// Step 3: Policy Engine — ALWAYS runs (RF03.1, RF03.4)
+	result := h.filter.EvaluateForGroup(qName, id.GroupID)
 	if result.Action == filter.ActionBlock {
 		fmt.Printf(" [BLOCKED: %s]\n", result.Reason)
 		h.sendBlockResponse(w, r, qName, qType)
