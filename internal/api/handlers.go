@@ -247,6 +247,8 @@ func (h *Handlers) GetLogs(w http.ResponseWriter, r *http.Request) {
 		ClientIP: q.Get("client_ip"),
 		Domain:   q.Get("domain"),
 		Action:   q.Get("action"),
+		DateFrom: q.Get("date_from"),
+		DateTo:   q.Get("date_to"),
 		Limit:    limit,
 		Offset:   offset,
 	})

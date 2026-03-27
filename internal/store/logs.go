@@ -20,11 +20,13 @@ type LogEntry struct {
 }
 
 type LogFilter struct {
-	ClientIP string
-	Domain   string
-	Action   string
-	Limit    int
-	Offset   int
+	ClientIP  string
+	Domain    string
+	Action    string
+	DateFrom  string
+	DateTo    string
+	Limit     int
+	Offset    int
 }
 
 // QueryLogs returns paginated log entries with filters (RF08.2, RF08.3).
@@ -46,6 +48,16 @@ func (s *Store) QueryLogs(ctx context.Context, f LogFilter) ([]LogEntry, int, er
 	if f.Action != "" {
 		where = append(where, fmt.Sprintf("action = $%d", argN))
 		args = append(args, f.Action)
+		argN++
+	}
+	if f.DateFrom != "" {
+		where = append(where, fmt.Sprintf("queried_at >= $%d::timestamptz", argN))
+		args = append(args, f.DateFrom)
+		argN++
+	}
+	if f.DateTo != "" {
+		where = append(where, fmt.Sprintf("queried_at <= $%d::timestamptz", argN))
+		args = append(args, f.DateTo)
 		argN++
 	}
 
