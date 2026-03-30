@@ -751,6 +751,102 @@ func (h *Handlers) SetBlocklistCategories(w http.ResponseWriter, r *http.Request
 	writeJSON(w, map[string]string{"status": "updated"})
 }
 
+// --- Download External Lists ---
+
+func (h *Handlers) DownloadLists(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	// Get all lists with source_url
+	rows, err := h.store.Pool().Query(ctx, `
+		SELECT id, name, source_url FROM blocklists
+		WHERE source_url != '' AND source_url IS NOT NULL AND active = true
+	`)
+	if err != nil {
+		writeError(w, fmt.Sprintf("Erro: %v", err), http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	type listInfo struct {
+		ID   int
+		Name string
+		URL  string
+	}
+	var lists []listInfo
+	for rows.Next() {
+		var l listInfo
+		if err := rows.Scan(&l.ID, &l.Name, &l.URL); err != nil {
+			continue
+		}
+		lists = append(lists, l)
+	}
+
+	if len(lists) == 0 {
+		writeJSON(w, map[string]string{"status": "nenhuma lista externa encontrada"})
+		return
+	}
+
+	downloader := filter.NewDownloader()
+	results := make(map[string]int)
+
+	for _, l := range lists {
+		domains, err := downloader.FetchDomains(ctx, l.URL)
+		if err != nil {
+			results[l.Name] = -1
+			continue
+		}
+
+		if len(domains) == 0 {
+			results[l.Name] = 0
+			continue
+		}
+
+		// Clear and re-insert
+		tx, err := h.store.Pool().Begin(ctx)
+		if err != nil {
+			results[l.Name] = -1
+			continue
+		}
+
+		tx.Exec(ctx, `DELETE FROM blocklist_entries WHERE list_id = $1`, l.ID)
+
+		count := 0
+		for _, domain := range domains {
+			_, err := tx.Exec(ctx, `
+				INSERT INTO blocklist_entries (list_id, domain)
+				VALUES ($1, $2) ON CONFLICT (list_id, domain) DO NOTHING
+			`, l.ID, domain)
+			if err == nil {
+				count++
+			}
+		}
+
+		tx.Exec(ctx, `UPDATE blocklists SET domain_count = $1, updated_at = NOW() WHERE id = $2`, count, l.ID)
+		tx.Commit(ctx)
+
+		results[l.Name] = count
+	}
+
+	// Auto-reload in-memory lists after download
+	blackDomains, whiteDomains, err := h.store.LoadActiveBlocklistEntries(ctx)
+	if err == nil {
+		h.black.Clear()
+		h.white.Clear()
+		for _, d := range blackDomains {
+			h.black.Add(d)
+		}
+		for _, d := range whiteDomains {
+			h.white.Add(d)
+		}
+	}
+
+	writeJSON(w, map[string]interface{}{
+		"downloaded":       results,
+		"blacklist_loaded": h.black.Size(),
+		"whitelist_loaded": h.white.Size(),
+	})
+}
+
 // --- Helpers ---
 
 func writeJSON(w http.ResponseWriter, data interface{}) {

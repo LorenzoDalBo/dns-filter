@@ -67,6 +67,7 @@ func NewRouter(h *Handlers) http.Handler {
 			r.Delete("/lists/{id}", h.DeleteBlocklist)
 			r.Post("/lists/{id}/entries", h.AddEntries)
 			r.Post("/lists/reload", h.ReloadLists)
+			r.Post("/lists/download", h.DownloadLists)
 
 			r.Get("/lists/{id}/categories", h.GetBlocklistCategories)
 			r.Put("/lists/{id}/categories", h.SetBlocklistCategories)

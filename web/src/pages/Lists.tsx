@@ -22,6 +22,7 @@ export default function Lists() {
   const [listType, setListType] = useState(0)
   const [message, setMessage] = useState('')
   const [reloading, setReloading] = useState(false)
+  const [downloading, setDownloading] = useState(false)
 
   const fetchLists = async () => {
     try {
@@ -49,6 +50,24 @@ export default function Lists() {
     }
   }
 
+  const handleDownload = async () => {
+    setDownloading(true)
+    try {
+      const res = await api.post('/lists/download')
+      const data = res.data
+      const details = Object.entries(data.downloaded || {})
+        .map(([name, count]) => `${name}: ${count === -1 ? 'erro' : count + ' domínios'}`)
+        .join(', ')
+      setMessage(`Download concluído — ${details}. Total carregado: ${data.blacklist_loaded} blacklist + ${data.whitelist_loaded} whitelist`)
+      fetchLists()
+      setTimeout(() => setMessage(''), 10000)
+    } catch {
+      setMessage('Erro ao baixar listas externas')
+    } finally {
+      setDownloading(false)
+    }
+  }
+
   const handleReload = async () => {
     setReloading(true)
     try {
@@ -66,13 +85,22 @@ export default function Lists() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-2xl font-bold text-gray-900">Listas de Bloqueio</h2>
-        <button
-          onClick={handleReload}
-          disabled={reloading}
-          className="px-4 py-2 bg-amber-500 text-white rounded-lg text-sm hover:bg-amber-600 disabled:opacity-50 transition-colors"
-        >
-          {reloading ? 'Recarregando...' : 'Recarregar Listas'}
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={handleDownload}
+            disabled={downloading}
+            className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 disabled:opacity-50 transition-colors"
+          >
+            {downloading ? 'Baixando...' : 'Baixar Listas Externas'}
+          </button>
+          <button
+            onClick={handleReload}
+            disabled={reloading}
+            className="px-4 py-2 bg-amber-500 text-white rounded-lg text-sm hover:bg-amber-600 disabled:opacity-50 transition-colors"
+          >
+            {reloading ? 'Recarregando...' : 'Recarregar Listas'}
+          </button>
+        </div>
       </div>
 
       <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
