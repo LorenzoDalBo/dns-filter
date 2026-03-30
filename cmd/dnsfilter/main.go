@@ -246,7 +246,7 @@ func main() {
 		server.Shutdown()
 	}()
 
-	fmt.Printf("DNS Filter v1.3.0\n")
+	fmt.Printf("DNS Filter v1.4.0\n")
 	fmt.Printf("DNS: %s\n", cfg.DNS.Listen)
 	fmt.Printf("API: %s\n", cfg.API.Listen)
 	fmt.Printf("Captive Portal: %s\n", cfg.Captive.Listen)

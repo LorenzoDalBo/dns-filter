@@ -1,0 +1,25 @@
+dns:
+  listen: "192.168.10.2:53"
+  upstreams:
+    - "8.8.8.8:53"
+    - "8.8.4.4:53"
+    - "1.1.1.1:53"
+  block_ip: "0.0.0.0"
+  portal_ip: "192.168.10.2"
+cache:
+  ttl_floor_seconds: 30
+  ttl_ceiling_seconds: 3600
+api:
+  listen: ":8081"
+  jwt_secret: "test-secret-change-in-production-32c"
+captive:
+  listen: ":80"
+  session_ttl_hours: 8
+database:
+  url: "postgres://dnsfilter:dnsfilter123@localhost:5432/dnsfilter?sslmode=disable"
+  retention_days: 120
+  log_buffer_size: 100000
+redis:
+  addr: "localhost:6379"
+log:
+  level: "debug"
