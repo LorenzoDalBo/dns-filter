@@ -10,6 +10,12 @@ interface BlocklistInfo {
   domain_count: number
 }
 
+interface Category {
+  id: number
+  name: string
+  description: string
+}
+
 const typeLabels: Record<number, { label: string; color: string }> = {
   0: { label: 'Blacklist', color: 'bg-red-100 text-red-700' },
   1: { label: 'Whitelist', color: 'bg-green-100 text-green-700' },
@@ -17,12 +23,16 @@ const typeLabels: Record<number, { label: string; color: string }> = {
 
 export default function Lists() {
   const [lists, setLists] = useState<BlocklistInfo[]>([])
+  const [categories, setCategories] = useState<Category[]>([])
   const [name, setName] = useState('')
   const [sourceURL, setSourceURL] = useState('')
   const [listType, setListType] = useState(0)
   const [message, setMessage] = useState('')
   const [reloading, setReloading] = useState(false)
   const [downloading, setDownloading] = useState(false)
+  const [editingCats, setEditingCats] = useState<number | null>(null)
+  const [listCats, setListCats] = useState<number[]>([])
+  const [savingCats, setSavingCats] = useState(false)
 
   const fetchLists = async () => {
     try {
@@ -33,7 +43,19 @@ export default function Lists() {
     }
   }
 
-  useEffect(() => { fetchLists() }, [])
+  const fetchCategories = async () => {
+    try {
+      const res = await api.get('/categories')
+      setCategories(res.data || [])
+    } catch (err) {
+      console.error('Erro ao carregar categorias:', err)
+    }
+  }
+
+  useEffect(() => {
+    fetchLists()
+    fetchCategories()
+  }, [])
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -56,9 +78,9 @@ export default function Lists() {
       const res = await api.post('/lists/download')
       const data = res.data
       const details = Object.entries(data.downloaded || {})
-        .map(([name, count]) => `${name}: ${count === -1 ? 'erro' : count + ' domínios'}`)
+        .map(([n, count]) => `${n}: ${count === -1 ? 'erro' : count + ' domínios'}`)
         .join(', ')
-      setMessage(`Download concluído — ${details}. Total carregado: ${data.blacklist_loaded} blacklist + ${data.whitelist_loaded} whitelist`)
+      setMessage(`Download concluído — ${details}. Total: ${data.blacklist_loaded} blacklist + ${data.whitelist_loaded} whitelist`)
       fetchLists()
       setTimeout(() => setMessage(''), 10000)
     } catch {
@@ -79,6 +101,62 @@ export default function Lists() {
     } finally {
       setReloading(false)
     }
+  }
+
+  const handleDelete = async (id: number) => {
+    if (!confirm('Tem certeza? Os domínios da lista serão removidos.')) return
+    try {
+      await api.delete(`/lists/${id}`)
+      setMessage('Lista removida')
+      fetchLists()
+      if (editingCats === id) setEditingCats(null)
+      setTimeout(() => setMessage(''), 3000)
+    } catch {
+      setMessage('Erro ao remover lista')
+    }
+  }
+
+  const openCategories = async (listId: number) => {
+    if (editingCats === listId) {
+      setEditingCats(null)
+      return
+    }
+    try {
+      const res = await api.get(`/lists/${listId}/categories`)
+      setListCats(res.data.categories || [])
+      setEditingCats(listId)
+    } catch {
+      setMessage('Erro ao carregar categorias da lista')
+    }
+  }
+
+  const toggleListCat = (catId: number) => {
+    setListCats(prev =>
+      prev.includes(catId) ? prev.filter(c => c !== catId) : [...prev, catId]
+    )
+  }
+
+  const saveCategories = async () => {
+    if (editingCats === null) return
+    setSavingCats(true)
+    try {
+      await api.put(`/lists/${editingCats}/categories`, { categories: listCats })
+      setMessage(`Categorias da lista atualizadas — ${listCats.length} categorias associadas`)
+      setTimeout(() => setMessage(''), 3000)
+    } catch {
+      setMessage('Erro ao salvar categorias')
+    } finally {
+      setSavingCats(false)
+    }
+  }
+
+  const catLabels: Record<string, string> = {
+    malware: 'Malware e Phishing',
+    ads: 'Publicidade e Rastreamento',
+    adult: 'Conteúdo Adulto',
+    social: 'Redes Sociais',
+    streaming: 'Streaming de Vídeo',
+    gaming: 'Jogos Online',
   }
 
   return (
@@ -103,13 +181,14 @@ export default function Lists() {
         </div>
       </div>
 
+      {message && (
+        <div className={`px-4 py-2 rounded-lg text-sm mb-4 ${message.includes('Erro') ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
+          {message}
+        </div>
+      )}
+
       <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
         <h3 className="text-lg font-semibold mb-4">Nova Lista</h3>
-        {message && (
-          <div className={`px-4 py-2 rounded-lg text-sm mb-4 ${message.includes('Erro') ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
-            {message}
-          </div>
-        )}
         <form onSubmit={handleCreate} className="flex gap-4 flex-wrap items-end">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Nome</label>
@@ -158,31 +237,99 @@ export default function Lists() {
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Domínios</th>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Fonte</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Ações</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {lists.map((l) => {
               const t = typeLabels[l.list_type] || { label: '?', color: 'bg-gray-100' }
               return (
-                <tr key={l.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 text-sm text-gray-700">{l.id}</td>
-                  <td className="px-4 py-3 text-sm text-gray-700 font-medium">{l.name}</td>
-                  <td className="px-4 py-3 text-sm">
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${t.color}`}>{t.label}</span>
-                  </td>
-                  <td className="px-4 py-3 text-sm text-gray-700">{l.domain_count}</td>
-                  <td className="px-4 py-3 text-sm">
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${l.active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
-                      {l.active ? 'Ativa' : 'Inativa'}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-sm text-gray-500 truncate max-w-xs">{l.source_url || 'Manual'}</td>
-                </tr>
+                <>
+                  <tr key={l.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-3 text-sm text-gray-500">{l.id}</td>
+                    <td className="px-4 py-3 text-sm font-medium text-gray-900">{l.name}</td>
+                    <td className="px-4 py-3">
+                      <span className={`px-2 py-1 rounded text-xs font-medium ${t.color}`}>{t.label}</span>
+                    </td>
+                    <td className="px-4 py-3 text-sm font-mono text-gray-700">{l.domain_count.toLocaleString()}</td>
+                    <td className="px-4 py-3">
+                      <span className={`px-2 py-1 rounded text-xs font-medium ${l.active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                        {l.active ? 'Ativa' : 'Inativa'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-500 max-w-xs truncate">
+                      {l.source_url || 'Manual'}
+                    </td>
+                    <td className="px-4 py-3 text-sm flex gap-2">
+                      <button
+                        onClick={() => openCategories(l.id)}
+                        className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
+                          editingCats === l.id
+                            ? 'bg-purple-100 text-purple-700'
+                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                        }`}
+                      >
+                        {editingCats === l.id ? 'Fechar' : 'Categorias'}
+                      </button>
+                      <button
+                        onClick={() => handleDelete(l.id)}
+                        className="px-3 py-1 bg-red-50 text-red-600 rounded text-xs font-medium hover:bg-red-100 transition-colors"
+                      >
+                        Remover
+                      </button>
+                    </td>
+                  </tr>
+                  {editingCats === l.id && (
+                    <tr key={`cats-${l.id}`}>
+                      <td colSpan={7} className="px-4 py-4 bg-purple-50">
+                        <div className="mb-3">
+                          <h4 className="text-sm font-semibold text-gray-900 mb-1">
+                            Categorias da lista "{l.name}"
+                          </h4>
+                          <p className="text-xs text-gray-500 mb-3">
+                            Selecione a quais categorias esta lista pertence. Grupos que bloqueiam essas categorias terão os domínios desta lista bloqueados.
+                          </p>
+                        </div>
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mb-4">
+                          {categories.map((cat) => (
+                            <label
+                              key={cat.id}
+                              className={`flex items-center gap-2 p-3 rounded-lg cursor-pointer transition-colors ${
+                                listCats.includes(cat.id)
+                                  ? 'bg-purple-100 border border-purple-300'
+                                  : 'bg-white border border-gray-200 hover:border-gray-300'
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={listCats.includes(cat.id)}
+                                onChange={() => toggleListCat(cat.id)}
+                                className="rounded text-purple-600 focus:ring-purple-500"
+                              />
+                              <div>
+                                <span className="text-sm font-medium text-gray-900">
+                                  {catLabels[cat.name] || cat.name}
+                                </span>
+                              </div>
+                            </label>
+                          ))}
+                        </div>
+                        {categories.length === 0 && (
+                          <p className="text-sm text-gray-400 mb-4">Nenhuma categoria cadastrada no banco.</p>
+                        )}
+                        <button
+                          onClick={saveCategories}
+                          disabled={savingCats}
+                          className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm hover:bg-purple-700 disabled:opacity-50 transition-colors"
+                        >
+                          {savingCats ? 'Salvando...' : 'Salvar Categorias'}
+                        </button>
+                      </td>
+                    </tr>
+                  )}
+                </>
               )
             })}
-            {lists.length === 0 && (
-              <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400">Nenhuma lista cadastrada</td></tr>
-            )}
           </tbody>
         </table>
       </div>
