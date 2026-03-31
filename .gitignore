@@ -33,3 +33,5 @@ node_modules/
 # Docker volumes
 pgdata/
 *.exe 
+codebase-snapshot.txt 
+generate-snapshot.ps1 
