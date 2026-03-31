@@ -1,4 +1,4 @@
-import { useEffect, useState, Fragment } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import api from '../api/client'
 
 interface BlocklistInfo {
@@ -37,7 +37,7 @@ export default function Lists() {
   const fetchLists = async () => {
     try {
       const res = await api.get('/lists')
-      setLists(res.data || [])
+      setLists(Array.isArray(res.data) ? res.data : [])
     } catch (err) {
       console.error('Erro ao carregar listas:', err)
     }
@@ -46,7 +46,7 @@ export default function Lists() {
   const fetchCategories = async () => {
     try {
       const res = await api.get('/categories')
-      setCategories(res.data || [])
+      setCategories(Array.isArray(res.data) ? res.data : [])
     } catch (err) {
       console.error('Erro ao carregar categorias:', err)
     }
@@ -123,7 +123,8 @@ export default function Lists() {
     }
     try {
       const res = await api.get(`/lists/${listId}/categories`)
-      setListCats(res.data.categories || [])
+      const cats = res.data?.categories
+      setListCats(Array.isArray(cats) ? cats : [])
       setEditingCats(listId)
     } catch {
       setMessage('Erro ao carregar categorias da lista')
@@ -280,11 +281,11 @@ export default function Lists() {
                     </td>
                   </tr>
                   {editingCats === l.id && (
-                    <tr key={`cats-${l.id}`}>
+                    <tr>
                       <td colSpan={7} className="px-4 py-4 bg-purple-50">
                         <div className="mb-3">
                           <h4 className="text-sm font-semibold text-gray-900 mb-1">
-                            Categorias da lista "{l.name}"
+                            Categorias da lista &quot;{l.name}&quot;
                           </h4>
                           <p className="text-xs text-gray-500 mb-3">
                             Selecione a quais categorias esta lista pertence. Grupos que bloqueiam essas categorias terão os domínios desta lista bloqueados.

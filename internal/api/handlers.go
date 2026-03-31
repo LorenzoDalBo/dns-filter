@@ -318,7 +318,11 @@ func (h *Handlers) ListGroups(w http.ResponseWriter, r *http.Request) {
 		writeError(w, fmt.Sprintf("Erro: %v", err), http.StatusInternalServerError)
 		return
 	}
+	if groups == nil {
+		groups = []store.Group{}
+	}
 	writeJSON(w, groups)
+
 }
 
 type createGroupRequest struct {
@@ -350,6 +354,9 @@ func (h *Handlers) ListBlocklists(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, fmt.Sprintf("Erro: %v", err), http.StatusInternalServerError)
 		return
+	}
+	if lists == nil {
+		lists = []store.BlocklistInfo{}
 	}
 	writeJSON(w, lists)
 }
@@ -658,6 +665,9 @@ func (h *Handlers) ListCategories(w http.ResponseWriter, r *http.Request) {
 		writeError(w, fmt.Sprintf("Erro: %v", err), http.StatusInternalServerError)
 		return
 	}
+	if cats == nil {
+		cats = []store.Category{}
+	}
 	writeJSON(w, cats)
 }
 
@@ -674,6 +684,9 @@ func (h *Handlers) GetGroupPolicy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if cats == nil {
+		cats = []int{}
+	}
 	writeJSON(w, map[string]interface{}{
 		"group_id":           groupID,
 		"blocked_categories": cats,
@@ -720,6 +733,9 @@ func (h *Handlers) GetBlocklistCategories(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	if cats == nil {
+		cats = []int{}
+	}
 	writeJSON(w, map[string]interface{}{
 		"list_id":    listID,
 		"categories": cats,

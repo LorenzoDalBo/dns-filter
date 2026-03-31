@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sort"
 	"syscall"
 	"time"
 
@@ -120,11 +121,24 @@ func main() {
 	identityResolver.StartSessionEvictor()
 
 	// Load IP ranges from database into identity resolver
+	// Sort by prefix length (most specific first) so /32 matches before /24
 	if db != nil {
 		dbRanges, err := db.ListIPRanges(ctx)
 		if err != nil {
 			fmt.Printf("Aviso: erro ao carregar ranges: %v\n", err)
 		} else {
+			// Sort: most specific (longest prefix) first
+			sort.Slice(dbRanges, func(i, j int) bool {
+				_, netI, _ := net.ParseCIDR(dbRanges[i].CIDR)
+				_, netJ, _ := net.ParseCIDR(dbRanges[j].CIDR)
+				if netI == nil || netJ == nil {
+					return false
+				}
+				onesI, _ := netI.Mask.Size()
+				onesJ, _ := netJ.Mask.Size()
+				return onesI > onesJ
+			})
+
 			for _, r := range dbRanges {
 				_, cidrNet, err := net.ParseCIDR(r.CIDR)
 				if err != nil {

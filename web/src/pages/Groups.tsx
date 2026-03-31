@@ -1,4 +1,4 @@
-import { useEffect, useState, Fragment } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import api from '../api/client'
 
 interface Group {
@@ -26,7 +26,7 @@ export default function Groups() {
   const fetchGroups = async () => {
     try {
       const res = await api.get('/groups')
-      setGroups(res.data || [])
+      setGroups(Array.isArray(res.data) ? res.data : [])
     } catch (err) {
       console.error('Erro ao carregar grupos:', err)
     }
@@ -35,7 +35,7 @@ export default function Groups() {
   const fetchCategories = async () => {
     try {
       const res = await api.get('/categories')
-      setCategories(res.data || [])
+      setCategories(Array.isArray(res.data) ? res.data : [])
     } catch (err) {
       console.error('Erro ao carregar categorias:', err)
     }
@@ -80,7 +80,8 @@ export default function Groups() {
     }
     try {
       const res = await api.get(`/groups/${groupId}/policy`)
-      setBlockedCats(res.data.blocked_categories || [])
+      const cats = res.data?.blocked_categories
+      setBlockedCats(Array.isArray(cats) ? cats : [])
       setEditingPolicy(groupId)
     } catch {
       setMessage('Erro ao carregar política')
@@ -167,7 +168,7 @@ export default function Groups() {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-             {groups.map((g) => (
+            {groups.map((g) => (
               <Fragment key={g.id}>
                 <tr className="hover:bg-gray-50">
                   <td className="px-4 py-3 text-sm text-gray-500">{g.id}</td>
@@ -193,11 +194,11 @@ export default function Groups() {
                   </td>
                 </tr>
                 {editingPolicy === g.id && (
-                  <tr key={`policy-${g.id}`}>
+                  <tr>
                     <td colSpan={4} className="px-4 py-4 bg-blue-50">
                       <div className="mb-3">
                         <h4 className="text-sm font-semibold text-gray-900 mb-1">
-                          Categorias bloqueadas para o grupo "{g.name}"
+                          Categorias bloqueadas para o grupo &quot;{g.name}&quot;
                         </h4>
                         <p className="text-xs text-gray-500 mb-3">
                           Marque as categorias que este grupo NÃO pode acessar. Listas associadas a essas categorias serão bloqueadas.
