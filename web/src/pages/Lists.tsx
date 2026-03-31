@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, Fragment } from 'react'
 import api from '../api/client'
 
 interface BlocklistInfo {
@@ -244,8 +244,8 @@ export default function Lists() {
             {lists.map((l) => {
               const t = typeLabels[l.list_type] || { label: '?', color: 'bg-gray-100' }
               return (
-                <>
-                  <tr key={l.id} className="hover:bg-gray-50">
+                <Fragment key={l.id}>
+                  <tr className="hover:bg-gray-50">
                     <td className="px-4 py-3 text-sm text-gray-500">{l.id}</td>
                     <td className="px-4 py-3 text-sm font-medium text-gray-900">{l.name}</td>
                     <td className="px-4 py-3">
@@ -327,7 +327,7 @@ export default function Lists() {
                       </td>
                     </tr>
                   )}
-                </>
+                </Fragment>
               )
             })}
           </tbody>

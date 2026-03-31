@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, Fragment } from 'react'
 import api from '../api/client'
 
 interface Group {
@@ -167,9 +167,9 @@ export default function Groups() {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {groups.map((g) => (
-              <>
-                <tr key={g.id} className="hover:bg-gray-50">
+             {groups.map((g) => (
+              <Fragment key={g.id}>
+                <tr className="hover:bg-gray-50">
                   <td className="px-4 py-3 text-sm text-gray-500">{g.id}</td>
                   <td className="px-4 py-3 text-sm font-medium text-gray-900">{g.name}</td>
                   <td className="px-4 py-3 text-sm text-gray-500">{g.description}</td>
@@ -243,7 +243,7 @@ export default function Groups() {
                     </td>
                   </tr>
                 )}
-              </>
+              </Fragment>
             ))}
           </tbody>
         </table>

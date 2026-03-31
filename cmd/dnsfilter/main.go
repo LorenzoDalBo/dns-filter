@@ -119,6 +119,28 @@ func main() {
 	identityResolver := identity.NewResolver(1)
 	identityResolver.StartSessionEvictor()
 
+	// Load IP ranges from database into identity resolver
+	if db != nil {
+		dbRanges, err := db.ListIPRanges(ctx)
+		if err != nil {
+			fmt.Printf("Aviso: erro ao carregar ranges: %v\n", err)
+		} else {
+			for _, r := range dbRanges {
+				_, cidrNet, err := net.ParseCIDR(r.CIDR)
+				if err != nil {
+					fmt.Printf("Aviso: range CIDR inválido %s: %v\n", r.CIDR, err)
+					continue
+				}
+				identityResolver.AddRange(identity.IPRange{
+					Network:  cidrNet,
+					GroupID:  r.GroupID,
+					AuthMode: identity.AuthMode(r.AuthMode),
+				})
+			}
+			fmt.Printf("Identity: %d ranges carregados do banco\n", len(dbRanges))
+		}
+	}
+
 	// Log Pipeline
 	var logPipeline *logging.Pipeline
 	if db != nil {
