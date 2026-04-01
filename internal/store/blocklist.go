@@ -20,6 +20,7 @@ func (s *Store) LoadActiveBlocklistEntries(ctx context.Context) (blacklist []str
 		FROM blocklist_entries be
 		JOIN blocklists bl ON bl.id = be.list_id
 		WHERE bl.active = true
+		  AND bl.id NOT IN (SELECT list_id FROM blocklist_categories)
 		ORDER BY bl.list_type, be.domain
 	`)
 	if err != nil {

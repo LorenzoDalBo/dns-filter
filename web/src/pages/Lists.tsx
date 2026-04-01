@@ -33,6 +33,9 @@ export default function Lists() {
   const [editingCats, setEditingCats] = useState<number | null>(null)
   const [listCats, setListCats] = useState<number[]>([])
   const [savingCats, setSavingCats] = useState(false)
+  const [addingDomains, setAddingDomains] = useState<number | null>(null)
+  const [domainsText, setDomainsText] = useState('')
+  const [savingDomains, setSavingDomains] = useState(false)
 
   const fetchLists = async () => {
     try {
@@ -110,6 +113,7 @@ export default function Lists() {
       setMessage('Lista removida')
       fetchLists()
       if (editingCats === id) setEditingCats(null)
+      if (addingDomains === id) setAddingDomains(null)
       setTimeout(() => setMessage(''), 3000)
     } catch {
       setMessage('Erro ao remover lista')
@@ -121,6 +125,7 @@ export default function Lists() {
       setEditingCats(null)
       return
     }
+    setAddingDomains(null)
     try {
       const res = await api.get(`/lists/${listId}/categories`)
       const cats = res.data?.categories
@@ -148,6 +153,43 @@ export default function Lists() {
       setMessage('Erro ao salvar categorias')
     } finally {
       setSavingCats(false)
+    }
+  }
+
+  const openDomains = (listId: number) => {
+    if (addingDomains === listId) {
+      setAddingDomains(null)
+      return
+    }
+    setEditingCats(null)
+    setDomainsText('')
+    setAddingDomains(listId)
+  }
+
+  const saveDomains = async () => {
+    if (addingDomains === null) return
+    const domains = domainsText
+      .split('\n')
+      .map(d => d.trim().toLowerCase())
+      .filter(d => d.length > 0 && d.includes('.'))
+
+    if (domains.length === 0) {
+      setMessage('Nenhum domínio válido encontrado')
+      return
+    }
+
+    setSavingDomains(true)
+    try {
+      const res = await api.post(`/lists/${addingDomains}/entries`, { domains })
+      setMessage(`${res.data.inserted} domínios adicionados com sucesso`)
+      setDomainsText('')
+      setAddingDomains(null)
+      fetchLists()
+      setTimeout(() => setMessage(''), 3000)
+    } catch {
+      setMessage('Erro ao adicionar domínios')
+    } finally {
+      setSavingDomains(false)
     }
   }
 
@@ -202,7 +244,7 @@ export default function Lists() {
             />
           </div>
           <div className="flex-1">
-            <label className="block text-sm font-medium text-gray-700 mb-1">URL (opcional para listas externas)</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">URL (opcional — deixe vazio para lista manual)</label>
             <input
               type="text"
               value={sourceURL}
@@ -226,6 +268,16 @@ export default function Lists() {
             Criar
           </button>
         </form>
+      </div>
+
+      <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
+        <div className="text-sm text-gray-600 space-y-1">
+          <p className="font-semibold text-gray-900">Como funciona:</p>
+          <p>• Listas <strong>sem categoria</strong> associada → bloqueiam/permitem para <strong>toda a rede</strong> (global)</p>
+          <p>• Listas <strong>com categoria</strong> associada → bloqueiam apenas para <strong>grupos que bloqueiam aquela categoria</strong> na política</p>
+          <p>• Use o botão <strong>Domínios</strong> para adicionar domínios manualmente a qualquer lista</p>
+          <p>• Após alterar listas ou domínios, clique <strong>Recarregar Listas</strong> para aplicar</p>
+        </div>
       </div>
 
       <div className="bg-white rounded-xl shadow-sm overflow-hidden">
@@ -263,6 +315,16 @@ export default function Lists() {
                     </td>
                     <td className="px-4 py-3 text-sm flex gap-2">
                       <button
+                        onClick={() => openDomains(l.id)}
+                        className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
+                          addingDomains === l.id
+                            ? 'bg-green-100 text-green-700'
+                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                        }`}
+                      >
+                        {addingDomains === l.id ? 'Fechar' : 'Domínios'}
+                      </button>
+                      <button
                         onClick={() => openCategories(l.id)}
                         className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
                           editingCats === l.id
@@ -280,6 +342,41 @@ export default function Lists() {
                       </button>
                     </td>
                   </tr>
+
+                  {addingDomains === l.id && (
+                    <tr>
+                      <td colSpan={7} className="px-4 py-4 bg-green-50">
+                        <div className="mb-3">
+                          <h4 className="text-sm font-semibold text-gray-900 mb-1">
+                            Adicionar domínios à lista &quot;{l.name}&quot;
+                          </h4>
+                          <p className="text-xs text-gray-500 mb-3">
+                            Digite um domínio por linha. Exemplos: facebook.com, instagram.com, tiktok.com
+                          </p>
+                        </div>
+                        <textarea
+                          value={domainsText}
+                          onChange={(e) => setDomainsText(e.target.value)}
+                          rows={6}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-green-500 mb-3"
+                          placeholder={"facebook.com\ninstagram.com\ntiktok.com\ntwitter.com\nx.com"}
+                        />
+                        <div className="flex items-center gap-3">
+                          <button
+                            onClick={saveDomains}
+                            disabled={savingDomains || !domainsText.trim()}
+                            className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 disabled:opacity-50 transition-colors"
+                          >
+                            {savingDomains ? 'Salvando...' : 'Adicionar Domínios'}
+                          </button>
+                          <span className="text-xs text-gray-500">
+                            {domainsText.split('\n').filter(d => d.trim().length > 0 && d.includes('.')).length} domínios válidos
+                          </span>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+
                   {editingCats === l.id && (
                     <tr>
                       <td colSpan={7} className="px-4 py-4 bg-purple-50">
@@ -288,7 +385,8 @@ export default function Lists() {
                             Categorias da lista &quot;{l.name}&quot;
                           </h4>
                           <p className="text-xs text-gray-500 mb-3">
-                            Selecione a quais categorias esta lista pertence. Grupos que bloqueiam essas categorias terão os domínios desta lista bloqueados.
+                            Selecione a quais categorias esta lista pertence. Se associada a categorias, os domínios só serão bloqueados para grupos que bloqueiam essas categorias.
+                            Se nenhuma categoria for selecionada, a lista bloqueia para toda a rede (global).
                           </p>
                         </div>
                         <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mb-4">

@@ -59,6 +59,10 @@ func NewRouter(h *Handlers) http.Handler {
 			r.Post("/groups", h.CreateGroup)
 			r.Put("/groups/{id}", h.UpdateGroup)
 			r.Delete("/groups/{id}", h.DeleteGroup)
+			// Categories & Policies (RF03.3, RF03.4)
+			r.Get("/categories", h.ListCategories)
+			r.Get("/groups/{id}/policy", h.GetGroupPolicy)
+			r.Put("/groups/{id}/policy", h.SetGroupPolicy)
 
 			// Blocklists CRUD (RF08.6, RF10.1)
 			r.Get("/lists", h.ListBlocklists)
