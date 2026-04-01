@@ -23,14 +23,12 @@ func (d *DBAuthenticator) Authenticate(username, password string) (*UserInfo, bo
 	defer cancel()
 
 	var hash string
-	var userID, groupID int
+	var userID int
 
 	err := d.pool.QueryRow(ctx, `
-		SELECT au.id, au.password, COALESCE(ir.group_id, 1) as group_id
-		FROM admin_users au
-		LEFT JOIN ip_ranges ir ON ir.id = 1
-		WHERE au.username = $1 AND au.active = true
-	`, username).Scan(&userID, &hash, &groupID)
+		SELECT id, password FROM admin_users
+		WHERE username = $1 AND active = true
+	`, username).Scan(&userID, &hash)
 	if err != nil {
 		fmt.Printf("Captive DB auth: user '%s' not found: %v\n", username, err)
 		return nil, false
@@ -40,5 +38,6 @@ func (d *DBAuthenticator) Authenticate(username, password string) (*UserInfo, bo
 		return nil, false
 	}
 
-	return &UserInfo{UserID: userID, GroupID: groupID}, true
+	// GroupID will be set by the captive portal from the IP range
+	return &UserInfo{UserID: userID, GroupID: 0}, true
 }

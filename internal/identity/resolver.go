@@ -180,3 +180,17 @@ func (r *Resolver) StartSessionEvictor() {
 		}
 	}()
 }
+
+// GetRangeGroupID returns the group ID for an IP based on configured ranges.
+// Returns 0 if no range matches.
+func (r *Resolver) GetRangeGroupID(ip net.IP) int {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	for _, rng := range r.ranges {
+		if rng.Network.Contains(ip) {
+			return rng.GroupID
+		}
+	}
+	return r.defaultGroupID
+}

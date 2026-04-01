@@ -178,16 +178,22 @@ func (s *Server) handleAuth(w http.ResponseWriter, r *http.Request) {
 	}
 	clientIP := net.ParseIP(host)
 
+	// Get the group from the IP range (not from user table)
+	groupID := s.resolver.GetRangeGroupID(clientIP)
+	if groupID == 0 {
+		groupID = user.GroupID // fallback
+	}
+
 	// Register session in Identity Resolver (RF06.3)
 	s.resolver.AddSession(&identity.Session{
 		ClientIP:  clientIP,
 		UserID:    user.UserID,
 		Username:  username,
-		GroupID:   user.GroupID,
+		GroupID:   groupID,
 		ExpiresAt: time.Now().Add(s.sessionTTL),
 	})
 
-	fmt.Printf("Captive: login OK — user=%s, ip=%s, group=%d\n", username, host, user.GroupID)
+	fmt.Printf("Captive: login OK — user=%s, ip=%s, group=%d\n", username, host, groupID)
 
 	// RF06.6: redirect to original URL if available
 	// Validate redirect URL to prevent open redirect (V03)
