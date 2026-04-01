@@ -182,8 +182,26 @@ func main() {
 			for _, d := range whiteDomains {
 				whitelist.Add(d)
 			}
+			// Re-add file-based domains (they were cleared above)
+			if _, err := os.Stat("blocklist.txt"); err == nil {
+				count, _ := blacklist.LoadFromFile("blocklist.txt")
+				fmt.Printf("Reloaded file: %d domínios de blocklist.txt\n", count)
+			}
+			if _, err := os.Stat("allowlist.txt"); err == nil {
+				count, _ := whitelist.LoadFromFile("allowlist.txt")
+				fmt.Printf("Reloaded file: %d domínios de allowlist.txt\n", count)
+			}
+			// Reload category mappings
+			catDomains, err := db.LoadCategoryDomains(ctx)
+			if err == nil {
+				filterEngine.LoadCategories(catDomains)
+			}
+			policies, err := db.LoadGroupPolicies(ctx)
+			if err == nil {
+				filterEngine.LoadPolicies(policies)
+			}
 			fmt.Printf("Reloaded: %d blacklist + %d whitelist\n",
-				len(blackDomains), len(whiteDomains))
+				blacklist.Size(), whitelist.Size())
 		})
 		// Load category-domain mappings (RF03.3)
 		catDomains, err := db.LoadCategoryDomains(ctx)
