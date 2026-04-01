@@ -313,7 +313,8 @@ export default function Lists() {
                     <td className="px-4 py-3 text-sm text-gray-500 max-w-xs truncate">
                       {l.source_url || 'Manual'}
                     </td>
-                    <td className="px-4 py-3 text-sm flex gap-2">
+                    <td className="px-4 py-3 text-sm">
+                      <div className="flex gap-2 flex-wrap">
                       <button
                         onClick={() => openDomains(l.id)}
                         className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
@@ -340,6 +341,7 @@ export default function Lists() {
                       >
                         Remover
                       </button>
+                    </div>
                     </td>
                   </tr>
 

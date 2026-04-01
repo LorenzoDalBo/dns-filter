@@ -74,6 +74,7 @@ export default function Logs() {
   const [clientIP, setClientIP] = useState('')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
+  const [autoRefresh, setAutoRefresh] = useState(false)
   const limit = 20
 
   const fetchLogs = async () => {
@@ -98,6 +99,14 @@ export default function Logs() {
   useEffect(() => {
     fetchLogs()
   }, [offset, domain, action, clientIP, dateFrom, dateTo])
+
+  useEffect(() => {
+    if (!autoRefresh) return
+    const interval = setInterval(() => {
+      fetchLogs()
+    }, 3000)
+    return () => clearInterval(interval)
+  }, [autoRefresh, offset, domain, action, clientIP, dateFrom, dateTo])
 
   const table = useReactTable({
     data,
@@ -157,6 +166,16 @@ export default function Logs() {
           className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 transition-colors"
         >
           Buscar
+        </button>
+        <button
+          onClick={() => setAutoRefresh(!autoRefresh)}
+          className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+            autoRefresh
+              ? 'bg-green-600 text-white hover:bg-green-700'
+              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+          }`}
+        >
+          {autoRefresh ? '⏸ Auto-refresh ON' : '▶ Auto-refresh'}
         </button>
       </div>
 
