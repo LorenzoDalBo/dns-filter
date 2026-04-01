@@ -175,3 +175,8 @@ func (s *Store) GetBlocklistCategories(ctx context.Context, listID int) ([]int, 
 	}
 	return cats, nil
 }
+
+// LoadIPRangesForIdentity loads all IP ranges for the identity resolver (startup).
+func (s *Store) LoadIPRangesForIdentity(ctx context.Context) ([]IPRange, error) {
+	return s.ListIPRanges(ctx)
+}

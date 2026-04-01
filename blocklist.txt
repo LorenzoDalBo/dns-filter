@@ -4,6 +4,7 @@
 0.0.0.0 doubleclick.net
 0.0.0.0 tracking.example.com
 
+
 # Plain domain format
 ads.facebook.com
 malware.test.com

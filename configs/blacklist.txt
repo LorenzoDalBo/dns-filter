@@ -6,6 +6,7 @@ ads.google.com
 doubleclick.net
 adservice.google.com
 pagead2.googlesyndication.com
+globo.com
 
 # Telemetry
 tracking.example.com
