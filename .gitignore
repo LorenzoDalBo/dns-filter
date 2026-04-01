@@ -35,3 +35,4 @@ pgdata/
 *.exe 
 codebase-snapshot.txt 
 generate-snapshot.ps1 
+.claude/ 
