@@ -147,6 +147,23 @@ func (c *Cache) Size() int {
 	return len(c.entries)
 }
 
+// Clear removes all entries from the L1 cache.
+// Called after blacklist reload to prevent serving stale allowed responses.
+func (c *Cache) Clear() {
+	c.mu.Lock()
+	count := len(c.entries)
+	c.entries = make(map[string]*entry)
+	c.mu.Unlock()
+
+	if c.l2 != nil {
+		c.l2.Clear()
+	}
+
+	if count > 0 {
+		fmt.Printf("Cache: cleared %d entries\n", count)
+	}
+}
+
 // extractTTL finds the minimum TTL across all answer records,
 // then clamps it between floor and ceiling (RF02.3).
 func (c *Cache) extractTTL(msg *dns.Msg) time.Duration {

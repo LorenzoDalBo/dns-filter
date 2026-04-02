@@ -95,3 +95,10 @@ func (r *RedisCache) Close() {
 		r.client.Close()
 	}
 }
+
+// Clear removes all DNS cache entries from Redis.
+func (r *RedisCache) Clear() {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	r.client.FlushDB(ctx)
+}
