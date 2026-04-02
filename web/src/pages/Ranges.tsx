@@ -23,7 +23,7 @@ export default function Ranges() {
   const [ranges, setRanges] = useState<IPRange[]>([])
   const [groups, setGroups] = useState<Group[]>([])
   const [cidr, setCidr] = useState('')
-  const [groupId, setGroupId] = useState(1)
+  const [groupId, setGroupId] = useState(0)
   const [authMode, setAuthMode] = useState(0)
   const [description, setDescription] = useState('')
   const [message, setMessage] = useState('')
@@ -31,7 +31,7 @@ export default function Ranges() {
   const fetchRanges = async () => {
     try {
       const res = await api.get('/ranges')
-      setRanges(res.data || [])
+      setRanges(Array.isArray(res.data) ? res.data : [])
     } catch (err) {
       console.error('Erro ao carregar ranges:', err)
     }
@@ -40,7 +40,11 @@ export default function Ranges() {
   const fetchGroups = async () => {
     try {
       const res = await api.get('/groups')
-      setGroups(res.data || [])
+      const data = Array.isArray(res.data) ? res.data : []
+      setGroups(data)
+      if (data.length > 0 && groupId === 0) {
+        setGroupId(data[0].id)
+      }
     } catch (err) {
       console.error('Erro ao carregar grupos:', err)
     }
@@ -53,15 +57,31 @@ export default function Ranges() {
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (groupId === 0) {
+      setMessage('Erro: selecione um grupo')
+      return
+    }
     try {
       await api.post('/ranges', { cidr, group_id: groupId, auth_mode: authMode, description })
       setCidr('')
       setDescription('')
-      setMessage('Range criado com sucesso')
+      setMessage('Faixa criada com sucesso')
       fetchRanges()
       setTimeout(() => setMessage(''), 3000)
     } catch {
-      setMessage('Erro ao criar range — verifique o formato CIDR')
+      setMessage('Erro ao criar faixa — verifique o formato CIDR (ex: 192.168.1.0/24)')
+    }
+  }
+
+  const handleDelete = async (id: number) => {
+    if (!confirm('Tem certeza que deseja remover esta faixa de IP?')) return
+    try {
+      await api.delete(`/ranges/${id}`)
+      setMessage('Faixa removida')
+      fetchRanges()
+      setTimeout(() => setMessage(''), 3000)
+    } catch {
+      setMessage('Erro ao remover faixa')
     }
   }
 
@@ -97,6 +117,7 @@ export default function Ranges() {
               onChange={(e) => setGroupId(Number(e.target.value))}
               className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
+              {groups.length === 0 && <option value={0}>Carregando...</option>}
               {groups.map(g => (
                 <option key={g.id} value={g.id}>{g.name}</option>
               ))}
@@ -129,6 +150,16 @@ export default function Ranges() {
         </form>
       </div>
 
+      <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
+        <div className="text-sm text-gray-600 space-y-1">
+          <p className="font-semibold text-gray-900">Como funciona:</p>
+          <p>• Faixas <strong>mais específicas</strong> (/32) têm prioridade sobre faixas maiores (/24)</p>
+          <p>• <strong>Sem autenticação:</strong> o grupo e política são aplicados diretamente pelo IP</p>
+          <p>• <strong>Captive Portal:</strong> o dispositivo precisa fazer login antes de navegar</p>
+          <p>• O servidor DNS deve ter uma faixa /32 própria com "Sem autenticação" para não redirecionar a si mesmo</p>
+        </div>
+      </div>
+
       <div className="bg-white rounded-xl shadow-sm overflow-hidden">
         <table className="w-full">
           <thead className="bg-gray-50">
@@ -138,6 +169,7 @@ export default function Ranges() {
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Grupo</th>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Autenticação</th>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Descrição</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Ações</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
@@ -152,11 +184,19 @@ export default function Ranges() {
                     <span className={`px-2 py-1 rounded-full text-xs font-medium ${a.color}`}>{a.label}</span>
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-500">{r.description || '-'}</td>
+                  <td className="px-4 py-3 text-sm">
+                    <button
+                      onClick={() => handleDelete(r.id)}
+                      className="px-3 py-1 bg-red-50 text-red-600 rounded text-xs font-medium hover:bg-red-100 transition-colors"
+                    >
+                      Remover
+                    </button>
+                  </td>
                 </tr>
               )
             })}
             {ranges.length === 0 && (
-              <tr><td colSpan={5} className="px-4 py-8 text-center text-gray-400">Nenhuma faixa cadastrada</td></tr>
+              <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400">Nenhuma faixa cadastrada</td></tr>
             )}
           </tbody>
         </table>
