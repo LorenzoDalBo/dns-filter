@@ -187,6 +187,11 @@ func (h *Handler) sendBlockResponse(w dns.ResponseWriter, r *dns.Msg, qName stri
 
 	switch qType {
 	case dns.TypeA:
+		// Return portal IP instead of block IP so the browser hits the block page (RF03.7)
+		blockAddr := h.blockIP
+		if h.portalIP != nil && !h.portalIP.IsUnspecified() {
+			blockAddr = h.portalIP
+		}
 		msg.Answer = append(msg.Answer, &dns.A{
 			Hdr: dns.RR_Header{
 				Name:   qName,
@@ -194,7 +199,7 @@ func (h *Handler) sendBlockResponse(w dns.ResponseWriter, r *dns.Msg, qName stri
 				Class:  dns.ClassINET,
 				Ttl:    60,
 			},
-			A: h.blockIP,
+			A: blockAddr,
 		})
 	case dns.TypeAAAA:
 		msg.Answer = append(msg.Answer, &dns.AAAA{

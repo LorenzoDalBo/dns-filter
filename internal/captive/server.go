@@ -59,7 +59,7 @@ func NewServer(addr string, resolver *identity.Resolver, auth Authenticator, ses
 	}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/", s.handleLogin)
+	mux.HandleFunc("/", s.handleRoot)
 	mux.HandleFunc("/auth", s.handleAuth)
 
 	s.httpServer = &http.Server{
@@ -81,6 +81,122 @@ func (s *Server) Shutdown() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	s.httpServer.Shutdown(ctx)
+}
+
+// handleRoot decides whether to show the login page or block page.
+// If the Host header is a blocked domain (not the server itself), show block page.
+// Otherwise show the captive portal login.
+func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
+	host := r.Host
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+
+	// If Host is an IP address (navigating directly to server), show login
+	if net.ParseIP(host) != nil {
+		s.handleLogin(w, r)
+		return
+	}
+
+	// Host is a domain — check if client has an active session
+	clientHost, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		s.handleLogin(w, r)
+		return
+	}
+	clientIP := net.ParseIP(clientHost)
+
+	// If client has no session, they need to login first (captive portal)
+	if clientIP != nil {
+		id, err := s.resolver.Resolve(clientIP)
+		if err != nil || id.AuthMode == 1 {
+			// No session or still in captive mode — show login
+			s.handleLogin(w, r)
+			return
+		}
+	}
+
+	// Client is authenticated — show block page
+	s.handleBlockPage(w, r, host)
+}
+
+// handleBlockPage shows a user-friendly page explaining that the domain is blocked.
+func (s *Server) handleBlockPage(w http.ResponseWriter, r *http.Request, domain string) {
+	domain = html.EscapeString(domain)
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	fmt.Fprintf(w, `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Acesso Bloqueado</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #f0f2f5;
+            display: flex; justify-content: center; align-items: center;
+            min-height: 100vh; padding: 20px;
+        }
+        .card {
+            background: white; border-radius: 16px; padding: 48px;
+            box-shadow: 0 2px 16px rgba(0,0,0,0.08); width: 100%%;
+            max-width: 480px; text-align: center;
+        }
+        .icon {
+            width: 64px; height: 64px; margin: 0 auto 20px;
+            background: #fee2e2; border-radius: 50%%;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .icon svg { width: 32px; height: 32px; }
+        h1 { font-size: 22px; color: #1a1a2e; margin-bottom: 8px; }
+        .domain {
+            font-family: monospace; font-size: 16px; color: #dc2626;
+            background: #fef2f2; padding: 8px 16px; border-radius: 8px;
+            margin: 16px 0; word-break: break-all;
+        }
+        p { color: #666; font-size: 14px; line-height: 1.6; }
+        .info {
+            margin-top: 24px; padding-top: 20px;
+            border-top: 1px solid #eee;
+            font-size: 12px; color: #999;
+        }
+        .info a {
+            color: #4a9eed; text-decoration: none;
+        }
+        .info a:hover { text-decoration: underline; }
+        .btn {
+            display: inline-block; margin-top: 20px;
+            padding: 10px 24px; background: #4a9eed; color: white;
+            border: none; border-radius: 8px; font-size: 14px;
+            text-decoration: none; cursor: pointer;
+        }
+        .btn:hover { background: #3a8edd; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"/>
+                <line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>
+            </svg>
+        </div>
+        <h1>Acesso Bloqueado</h1>
+        <div class="domain">%s</div>
+        <p>
+            Este site foi bloqueado pela política de segurança da rede.
+            Se você acredita que este bloqueio é um erro, entre em contato
+            com o administrador da rede.
+        </p>
+        <a class="btn" href="javascript:history.back()">Voltar</a>
+        <div class="info">
+            DNS Filter — Proteção de rede corporativa
+        </div>
+    </div>
+</body>
+</html>`, domain)
 }
 
 // handleLogin serves the login page (RF06.4).
