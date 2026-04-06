@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
 	"strconv"
 	"time"
 
@@ -438,10 +439,48 @@ func (h *Handlers) ReloadLists(w http.ResponseWriter, r *http.Request) {
 		h.white.Add(d)
 	}
 
+	// Reload file-based lists (they were cleared above)
+	if _, err := os.Stat("blocklist.txt"); err == nil {
+		fileCount, _ := h.black.LoadFromFile("blocklist.txt")
+		fmt.Printf("Reload: %d domínios de blocklist.txt\n", fileCount)
+	}
+	if _, err := os.Stat("allowlist.txt"); err == nil {
+		fileCount, _ := h.white.LoadFromFile("allowlist.txt")
+		fmt.Printf("Reload: %d domínios de allowlist.txt\n", fileCount)
+	}
+
+	// Reload category-domain mappings (RF03.3)
+	catCount := 0
+	catDomains, err := h.store.LoadCategoryDomains(r.Context())
+	if err != nil {
+		fmt.Printf("Reload: erro ao carregar categorias: %v\n", err)
+	} else {
+		h.filter.LoadCategories(catDomains)
+		for _, domains := range catDomains {
+			catCount += len(domains)
+		}
+	}
+
+	// Reload group policies (RF03.4)
+	policyCount := 0
+	policies, err := h.store.LoadGroupPolicies(r.Context())
+	if err != nil {
+		fmt.Printf("Reload: erro ao carregar políticas: %v\n", err)
+	} else {
+		h.filter.LoadPolicies(policies)
+		policyCount = len(policies)
+	}
+
+	// Clear DNS cache so blocked domains don't serve stale responses
+	h.cache.Clear()
+	fmt.Println("DNS cache cleared after reload")
+
 	writeJSON(w, map[string]interface{}{
-		"blacklist": len(blackDomains),
-		"whitelist": len(whiteDomains),
-		"status":    "reloaded",
+		"blacklist":          len(blackDomains),
+		"whitelist":          len(whiteDomains),
+		"category_domains":   catCount,
+		"groups_with_policy": policyCount,
+		"status":             "reloaded",
 	})
 }
 
@@ -874,4 +913,65 @@ func writeError(w http.ResponseWriter, msg string, status int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(map[string]string{"error": msg})
+}
+
+func (h *Handlers) GetEntries(w http.ResponseWriter, r *http.Request) {
+	listID, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, "ID inválido", http.StatusBadRequest)
+		return
+	}
+
+	search := r.URL.Query().Get("search")
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	domains, total, err := h.store.ListBlocklistEntries(r.Context(), listID, search, limit, offset)
+	if err != nil {
+		writeError(w, fmt.Sprintf("Erro: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	if domains == nil {
+		domains = []string{}
+	}
+
+	writeJSON(w, map[string]interface{}{
+		"domains": domains,
+		"total":   total,
+		"limit":   limit,
+		"offset":  offset,
+	})
+}
+
+type deleteEntryRequest struct {
+	Domain string `json:"domain"`
+}
+
+func (h *Handlers) DeleteEntry(w http.ResponseWriter, r *http.Request) {
+	listID, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, "ID inválido", http.StatusBadRequest)
+		return
+	}
+
+	var req deleteEntryRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, "JSON inválido", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.store.DeleteBlocklistEntry(r.Context(), listID, req.Domain); err != nil {
+		writeError(w, fmt.Sprintf("Erro: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, map[string]string{"deleted": req.Domain})
 }

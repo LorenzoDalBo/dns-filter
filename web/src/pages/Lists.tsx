@@ -30,12 +30,25 @@ export default function Lists() {
   const [message, setMessage] = useState('')
   const [reloading, setReloading] = useState(false)
   const [downloading, setDownloading] = useState(false)
+
+  // Categories panel
   const [editingCats, setEditingCats] = useState<number | null>(null)
   const [listCats, setListCats] = useState<number[]>([])
   const [savingCats, setSavingCats] = useState(false)
+
+  // Add domains panel
   const [addingDomains, setAddingDomains] = useState<number | null>(null)
   const [domainsText, setDomainsText] = useState('')
   const [savingDomains, setSavingDomains] = useState(false)
+
+  // View domains panel
+  const [viewingDomains, setViewingDomains] = useState<number | null>(null)
+  const [viewDomains, setViewDomains] = useState<string[]>([])
+  const [viewTotal, setViewTotal] = useState(0)
+  const [viewSearch, setViewSearch] = useState('')
+  const [viewOffset, setViewOffset] = useState(0)
+  const [viewLoading, setViewLoading] = useState(false)
+  const viewLimit = 50
 
   const fetchLists = async () => {
     try {
@@ -114,18 +127,18 @@ export default function Lists() {
       fetchLists()
       if (editingCats === id) setEditingCats(null)
       if (addingDomains === id) setAddingDomains(null)
+      if (viewingDomains === id) setViewingDomains(null)
       setTimeout(() => setMessage(''), 3000)
     } catch {
       setMessage('Erro ao remover lista')
     }
   }
 
+  // --- Categories ---
   const openCategories = async (listId: number) => {
-    if (editingCats === listId) {
-      setEditingCats(null)
-      return
-    }
+    if (editingCats === listId) { setEditingCats(null); return }
     setAddingDomains(null)
+    setViewingDomains(null)
     try {
       const res = await api.get(`/lists/${listId}/categories`)
       const cats = res.data?.categories
@@ -156,12 +169,11 @@ export default function Lists() {
     }
   }
 
-  const openDomains = (listId: number) => {
-    if (addingDomains === listId) {
-      setAddingDomains(null)
-      return
-    }
+  // --- Add Domains ---
+  const openAddDomains = (listId: number) => {
+    if (addingDomains === listId) { setAddingDomains(null); return }
     setEditingCats(null)
+    setViewingDomains(null)
     setDomainsText('')
     setAddingDomains(listId)
   }
@@ -193,6 +205,53 @@ export default function Lists() {
     }
   }
 
+  // --- View Domains ---
+  const fetchDomains = async (listId: number, search: string, offset: number) => {
+    setViewLoading(true)
+    try {
+      const params = new URLSearchParams({ limit: String(viewLimit), offset: String(offset) })
+      if (search) params.set('search', search)
+      const res = await api.get(`/lists/${listId}/entries?${params}`)
+      setViewDomains(Array.isArray(res.data?.domains) ? res.data.domains : [])
+      setViewTotal(res.data?.total || 0)
+    } catch {
+      setMessage('Erro ao carregar domínios')
+    } finally {
+      setViewLoading(false)
+    }
+  }
+
+  const openViewDomains = (listId: number) => {
+    if (viewingDomains === listId) { setViewingDomains(null); return }
+    setEditingCats(null)
+    setAddingDomains(null)
+    setViewSearch('')
+    setViewOffset(0)
+    setViewingDomains(listId)
+    fetchDomains(listId, '', 0)
+  }
+
+  const handleViewSearch = (listId: number, search: string) => {
+    setViewSearch(search)
+    setViewOffset(0)
+    fetchDomains(listId, search, 0)
+  }
+
+  const handleViewPage = (listId: number, newOffset: number) => {
+    setViewOffset(newOffset)
+    fetchDomains(listId, viewSearch, newOffset)
+  }
+
+  const handleDeleteDomain = async (listId: number, domain: string) => {
+    try {
+      await api.delete(`/lists/${listId}/entries`, { data: { domain } })
+      fetchDomains(listId, viewSearch, viewOffset)
+      fetchLists()
+    } catch {
+      setMessage('Erro ao remover domínio')
+    }
+  }
+
   const catLabels: Record<string, string> = {
     malware: 'Malware e Phishing',
     ads: 'Publicidade e Rastreamento',
@@ -202,23 +261,20 @@ export default function Lists() {
     gaming: 'Jogos Online',
   }
 
+  const totalPages = Math.ceil(viewTotal / viewLimit)
+  const currentPage = Math.floor(viewOffset / viewLimit) + 1
+
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-2xl font-bold text-gray-900">Listas de Bloqueio</h2>
         <div className="flex gap-2">
-          <button
-            onClick={handleDownload}
-            disabled={downloading}
-            className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 disabled:opacity-50 transition-colors"
-          >
+          <button onClick={handleDownload} disabled={downloading}
+            className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 disabled:opacity-50 transition-colors">
             {downloading ? 'Baixando...' : 'Baixar Listas Externas'}
           </button>
-          <button
-            onClick={handleReload}
-            disabled={reloading}
-            className="px-4 py-2 bg-amber-500 text-white rounded-lg text-sm hover:bg-amber-600 disabled:opacity-50 transition-colors"
-          >
+          <button onClick={handleReload} disabled={reloading}
+            className="px-4 py-2 bg-amber-500 text-white rounded-lg text-sm hover:bg-amber-600 disabled:opacity-50 transition-colors">
             {reloading ? 'Recarregando...' : 'Recarregar Listas'}
           </button>
         </div>
@@ -235,31 +291,19 @@ export default function Lists() {
         <form onSubmit={handleCreate} className="flex gap-4 flex-wrap items-end">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Nome</label>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              required
-            />
+            <input type="text" value={name} onChange={(e) => setName(e.target.value)}
+              className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" required />
           </div>
           <div className="flex-1">
             <label className="block text-sm font-medium text-gray-700 mb-1">URL (opcional — deixe vazio para lista manual)</label>
-            <input
-              type="text"
-              value={sourceURL}
-              onChange={(e) => setSourceURL(e.target.value)}
+            <input type="text" value={sourceURL} onChange={(e) => setSourceURL(e.target.value)}
               placeholder="https://raw.githubusercontent.com/..."
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Tipo</label>
-            <select
-              value={listType}
-              onChange={(e) => setListType(Number(e.target.value))}
-              className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
+            <select value={listType} onChange={(e) => setListType(Number(e.target.value))}
+              className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
               <option value={0}>Blacklist</option>
               <option value={1}>Whitelist</option>
             </select>
@@ -275,7 +319,7 @@ export default function Lists() {
           <p className="font-semibold text-gray-900">Como funciona:</p>
           <p>• Listas <strong>sem categoria</strong> associada → bloqueiam/permitem para <strong>toda a rede</strong> (global)</p>
           <p>• Listas <strong>com categoria</strong> associada → bloqueiam apenas para <strong>grupos que bloqueiam aquela categoria</strong> na política</p>
-          <p>• Use o botão <strong>Domínios</strong> para adicionar domínios manualmente a qualquer lista</p>
+          <p>• Use <strong>Adicionar</strong> para inserir domínios manualmente e <strong>Ver Domínios</strong> para buscar e gerenciar</p>
           <p>• Após alterar listas ou domínios, clique <strong>Recarregar Listas</strong> para aplicar</p>
         </div>
       </div>
@@ -315,36 +359,115 @@ export default function Lists() {
                     </td>
                     <td className="px-4 py-3 text-sm">
                       <div className="flex gap-2 flex-wrap">
-                      <button
-                        onClick={() => openDomains(l.id)}
-                        className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
-                          addingDomains === l.id
-                            ? 'bg-green-100 text-green-700'
-                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                        }`}
-                      >
-                        {addingDomains === l.id ? 'Fechar' : 'Domínios'}
-                      </button>
-                      <button
-                        onClick={() => openCategories(l.id)}
-                        className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
-                          editingCats === l.id
-                            ? 'bg-purple-100 text-purple-700'
-                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                        }`}
-                      >
-                        {editingCats === l.id ? 'Fechar' : 'Categorias'}
-                      </button>
-                      <button
-                        onClick={() => handleDelete(l.id)}
-                        className="px-3 py-1 bg-red-50 text-red-600 rounded text-xs font-medium hover:bg-red-100 transition-colors"
-                      >
-                        Remover
-                      </button>
-                    </div>
+                        <button onClick={() => openViewDomains(l.id)}
+                          className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
+                            viewingDomains === l.id ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                          }`}>
+                          {viewingDomains === l.id ? 'Fechar' : 'Ver Domínios'}
+                        </button>
+                        <button onClick={() => openAddDomains(l.id)}
+                          className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
+                            addingDomains === l.id ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                          }`}>
+                          {addingDomains === l.id ? 'Fechar' : 'Adicionar'}
+                        </button>
+                        <button onClick={() => openCategories(l.id)}
+                          className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
+                            editingCats === l.id ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                          }`}>
+                          {editingCats === l.id ? 'Fechar' : 'Categorias'}
+                        </button>
+                        <button onClick={() => handleDelete(l.id)}
+                          className="px-3 py-1 bg-red-50 text-red-600 rounded text-xs font-medium hover:bg-red-100 transition-colors">
+                          Remover
+                        </button>
+                      </div>
                     </td>
                   </tr>
 
+                  {/* View domains panel */}
+                  {viewingDomains === l.id && (
+                    <tr>
+                      <td colSpan={7} className="px-4 py-4 bg-blue-50">
+                        <div className="mb-3">
+                          <h4 className="text-sm font-semibold text-gray-900 mb-1">
+                            Domínios da lista &quot;{l.name}&quot;
+                          </h4>
+                          <p className="text-xs text-gray-500 mb-3">
+                            {viewTotal.toLocaleString()} domínios no total. Use a busca para filtrar.
+                          </p>
+                        </div>
+                        <div className="flex gap-2 mb-3">
+                          <input
+                            type="text"
+                            value={viewSearch}
+                            onChange={(e) => handleViewSearch(l.id, e.target.value)}
+                            placeholder="Buscar domínio..."
+                            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          />
+                          <span className="flex items-center text-xs text-gray-500">
+                            {viewTotal > 0 ? `Página ${currentPage} de ${totalPages}` : 'Nenhum resultado'}
+                          </span>
+                        </div>
+                        {viewLoading ? (
+                          <p className="text-sm text-gray-400 py-4 text-center">Carregando...</p>
+                        ) : (
+                          <>
+                            <div className="max-h-80 overflow-y-auto border border-gray-200 rounded-lg bg-white">
+                              <table className="w-full">
+                                <tbody className="divide-y divide-gray-100">
+                                  {viewDomains.map((d) => (
+                                    <tr key={d} className="hover:bg-gray-50">
+                                      <td className="px-3 py-2 text-sm font-mono text-gray-700">{d}</td>
+                                      <td className="px-3 py-2 text-right">
+                                        <button
+                                          onClick={() => handleDeleteDomain(l.id, d)}
+                                          className="text-red-400 hover:text-red-600 text-xs transition-colors"
+                                          title="Remover domínio"
+                                        >
+                                          ✕
+                                        </button>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                  {viewDomains.length === 0 && (
+                                    <tr>
+                                      <td colSpan={2} className="px-3 py-6 text-center text-sm text-gray-400">
+                                        {viewSearch ? 'Nenhum domínio encontrado para esta busca' : 'Lista vazia'}
+                                      </td>
+                                    </tr>
+                                  )}
+                                </tbody>
+                              </table>
+                            </div>
+                            {totalPages > 1 && (
+                              <div className="flex items-center justify-between mt-3">
+                                <button
+                                  onClick={() => handleViewPage(l.id, viewOffset - viewLimit)}
+                                  disabled={viewOffset === 0}
+                                  className="px-3 py-1 bg-white border border-gray-300 rounded text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-40 transition-colors"
+                                >
+                                  Anterior
+                                </button>
+                                <span className="text-xs text-gray-500">
+                                  Mostrando {viewOffset + 1}–{Math.min(viewOffset + viewLimit, viewTotal)} de {viewTotal.toLocaleString()}
+                                </span>
+                                <button
+                                  onClick={() => handleViewPage(l.id, viewOffset + viewLimit)}
+                                  disabled={viewOffset + viewLimit >= viewTotal}
+                                  className="px-3 py-1 bg-white border border-gray-300 rounded text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-40 transition-colors"
+                                >
+                                  Próxima
+                                </button>
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </td>
+                    </tr>
+                  )}
+
+                  {/* Add domains panel */}
                   {addingDomains === l.id && (
                     <tr>
                       <td colSpan={7} className="px-4 py-4 bg-green-50">
@@ -364,11 +487,8 @@ export default function Lists() {
                           placeholder={"facebook.com\ninstagram.com\ntiktok.com\ntwitter.com\nx.com"}
                         />
                         <div className="flex items-center gap-3">
-                          <button
-                            onClick={saveDomains}
-                            disabled={savingDomains || !domainsText.trim()}
-                            className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 disabled:opacity-50 transition-colors"
-                          >
+                          <button onClick={saveDomains} disabled={savingDomains || !domainsText.trim()}
+                            className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 disabled:opacity-50 transition-colors">
                             {savingDomains ? 'Salvando...' : 'Adicionar Domínios'}
                           </button>
                           <span className="text-xs text-gray-500">
@@ -379,6 +499,7 @@ export default function Lists() {
                     </tr>
                   )}
 
+                  {/* Categories panel */}
                   {editingCats === l.id && (
                     <tr>
                       <td colSpan={7} className="px-4 py-4 bg-purple-50">
@@ -393,36 +514,21 @@ export default function Lists() {
                         </div>
                         <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mb-4">
                           {categories.map((cat) => (
-                            <label
-                              key={cat.id}
+                            <label key={cat.id}
                               className={`flex items-center gap-2 p-3 rounded-lg cursor-pointer transition-colors ${
-                                listCats.includes(cat.id)
-                                  ? 'bg-purple-100 border border-purple-300'
-                                  : 'bg-white border border-gray-200 hover:border-gray-300'
-                              }`}
-                            >
-                              <input
-                                type="checkbox"
-                                checked={listCats.includes(cat.id)}
-                                onChange={() => toggleListCat(cat.id)}
-                                className="rounded text-purple-600 focus:ring-purple-500"
-                              />
-                              <div>
-                                <span className="text-sm font-medium text-gray-900">
-                                  {catLabels[cat.name] || cat.name}
-                                </span>
-                              </div>
+                                listCats.includes(cat.id) ? 'bg-purple-100 border border-purple-300' : 'bg-white border border-gray-200 hover:border-gray-300'
+                              }`}>
+                              <input type="checkbox" checked={listCats.includes(cat.id)} onChange={() => toggleListCat(cat.id)}
+                                className="rounded text-purple-600 focus:ring-purple-500" />
+                              <span className="text-sm font-medium text-gray-900">{catLabels[cat.name] || cat.name}</span>
                             </label>
                           ))}
                         </div>
                         {categories.length === 0 && (
                           <p className="text-sm text-gray-400 mb-4">Nenhuma categoria cadastrada no banco.</p>
                         )}
-                        <button
-                          onClick={saveCategories}
-                          disabled={savingCats}
-                          className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm hover:bg-purple-700 disabled:opacity-50 transition-colors"
-                        >
+                        <button onClick={saveCategories} disabled={savingCats}
+                          className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm hover:bg-purple-700 disabled:opacity-50 transition-colors">
                           {savingCats ? 'Salvando...' : 'Salvar Categorias'}
                         </button>
                       </td>
